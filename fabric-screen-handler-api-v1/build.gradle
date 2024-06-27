@@ -1,4 +1,4 @@
-archivesBaseName = "fabric-screen-handler-api-v1"
+base.archivesName = "fabric-screen-handler-api-v1"
 version = getSubprojectVersion(project)
 
 loom {

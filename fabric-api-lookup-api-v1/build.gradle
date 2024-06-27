@@ -1,4 +1,4 @@
-archivesBaseName = "fabric-api-lookup-api-v1"
+base.archivesName = "fabric-api-lookup-api-v1"
 version = getSubprojectVersion(project)
 
 moduleDependencies(project, [

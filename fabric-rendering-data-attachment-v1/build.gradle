@@ -1,4 +1,4 @@
-archivesBaseName = "fabric-rendering-data-attachment-v1"
+base.archivesName = "fabric-rendering-data-attachment-v1"
 version = getSubprojectVersion(project)
 
 moduleDependencies(project, [

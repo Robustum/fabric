@@ -1,4 +1,4 @@
-archivesBaseName = "fabric-renderer-indigo"
+base.archivesName = "fabric-renderer-indigo"
 version = getSubprojectVersion(project)
 
 moduleDependencies(project, [

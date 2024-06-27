@@ -1,4 +1,4 @@
-archivesBaseName = "fabric-dimensions-v1"
+base.archivesName = "fabric-dimensions-v1"
 version = getSubprojectVersion(project)
 
 dependencies {

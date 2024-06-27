@@ -228,7 +228,7 @@ subprojects {
 
 task remapMavenJar(type: net.fabricmc.loom.task.RemapJarTask, dependsOn: jar) {
 	input = jar.archiveFile
-	archiveFileName = "${archivesBaseName}-${project.version}-maven.jar"
+	archiveFileName = "${base.archivesName}-${project.version}-maven.jar"
 	addNestedDependencies = false
 }
 build.dependsOn remapMavenJar
@@ -345,7 +345,7 @@ task github(dependsOn: remapMavenJar) {
 		releaseBuilder.prerelease(project.prerelease)
 
 		def ghRelease = releaseBuilder.create()
-		ghRelease.uploadAsset(file("${project.buildDir}/libs/${archivesBaseName}-${version}.jar"), "application/java-archive");
+		ghRelease.uploadAsset(file("${project.buildDir}/libs/${base.archivesName}-${version}.jar"), "application/java-archive");
 	}
 }
 
