@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: gradle/wrapper-validation-action@v2
+      - uses: gradle/actions/wrapper-validation@v3
       - run: ./gradlew check build publishToMavenLocal --stacktrace
       - uses: Juuxel/publish-checkstyle-report@v1
         if: ${{ failure() }}
@@ -33,7 +33,7 @@ jobs:
             **/build/reports/checkstyle/*.xml
       - run: mkdir run && echo "eula=true" >> run/eula.txt
       - run: ./gradlew runAutoTestServer --stacktrace --warning-mode=fail
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: Artifacts ${{ matrix.java }}
           path: |
