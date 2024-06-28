@@ -138,12 +138,12 @@ allprojects {
 		toolVersion = "9.1"
 	}
 
-	tasks.withType(AbstractArchiveTask) {
+	tasks.withType(AbstractArchiveTask).configureEach {
 		preserveFileTimestamps = false
 		reproducibleFileOrder = true
 	}
 
-	tasks.withType(GenerateModuleMetadata) {
+	tasks.withType(GenerateModuleMetadata).configureEach {
 		enabled = false
 	}
 }
@@ -265,7 +265,7 @@ publishing {
 // Required until the deprecation is removed. Fabric API's main jar that is published to maven does not contain sub modules.
 loom.disableDeprecatedPomGeneration(publishing.publications.mavenJava)
 
-void setupRepositories(RepositoryHandler repositories) {
+static void setupRepositories(RepositoryHandler repositories) {
 	//repositories.mavenLocal() // uncomment for testing
 	def ENV = System.getenv()
 	if (ENV.MAVEN_URL) {
@@ -345,7 +345,7 @@ task github(dependsOn: remapMavenJar) {
 		releaseBuilder.prerelease(project.prerelease)
 
 		def ghRelease = releaseBuilder.create()
-		ghRelease.uploadAsset(file("${project.buildDir}/libs/${base.archivesName}-${version}.jar"), "application/java-archive");
+		ghRelease.uploadAsset(file("${project.layout.buildDirectory}/libs/${base.archivesName}-${version}.jar"), "application/java-archive")
 	}
 }
 
@@ -370,9 +370,9 @@ task modrinth(type: com.modrinth.minotaur.TaskModrinthUpload, dependsOn: remapMa
 // A task to ensure that the version being released has not already been released.
 task checkVersion {
 	doFirst {
-		def xml = new URL("https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml").text
-		def metadata = new XmlSlurper().parseText(xml)
-		def versions = metadata.versioning.versions.version*.text();
+		def xml = new URI("https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml").toURL().text
+		def metadata = new groovy.xml.XmlSlurper().parseText(xml)
+		def versions = metadata.versioning.versions.version*.text()
 		if (versions.contains(version)) {
 			throw new RuntimeException("${version} has already been released!")
 		}
