@@ -1,27 +1,41 @@
 name: Build
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - "1.16"
+  pull_request:
+    branches:
+      - "1.16"
+
+concurrency:
+  cancel-in-progress: true
+  group: "${{ github.workflow }}-${{ github.ref }}"
+
 jobs:
   build:
     strategy:
       matrix:
-        java: [16-jdk, 17-jdk]
-    runs-on: ubuntu-20.04
+        java: [21-ubuntu]
+    runs-on: ubuntu-22.04
     container:
-      image: eclipse-temurin:${{ matrix.java }}
+      image: mcr.microsoft.com/openjdk/jdk:${{ matrix.java }}
       options: --user root
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: gradle/wrapper-validation-action@v1
-      - run: ./gradlew check build publishToMavenLocal --stacktrace --parallel --warning-mode=fail
+      - uses: gradle/actions/wrapper-validation@v3
+      - run: ./gradlew check build publishToMavenLocal --stacktrace
+      - uses: Juuxel/publish-checkstyle-report@v1
+        if: ${{ failure() }}
+        with:
+          reports: |
+            **/build/reports/checkstyle/*.xml
       - run: mkdir run && echo "eula=true" >> run/eula.txt
-      - run: ./gradlew runAutoTestServer --stacktrace --warning-mode=fail
-      - uses: actions/upload-artifact@v2
+      - run: ./gradlew runAutoTestServer --stacktrace
+      - uses: actions/upload-artifact@v4
         with:
-          name: Artifacts
-          path: build/libs/
-      - uses: actions/upload-artifact@v2
-        with:
-          name: Artifacts
-          path: ./*/build/libs/
+          name: Artifacts ${{ matrix.java }}
+          path: |
+            build/libs/
+            ./*/build/libs/

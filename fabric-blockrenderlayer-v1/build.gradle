@@ -1,4 +1,4 @@
-archivesBaseName = "fabric-blockrenderlayer-v1"
+base.archivesName = "fabric-blockrenderlayer-v1"
 version = getSubprojectVersion(project)
 
 moduleDependencies(project, [

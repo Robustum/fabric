@@ -1,4 +1,4 @@
-archivesBaseName = "fabric-networking-v0"
+base.archivesName = "fabric-networking-v0"
 version = getSubprojectVersion(project)
 
 moduleDependencies(project, [

@@ -1,4 +1,4 @@
-archivesBaseName = "fabric-biome-api-v1"
+base.archivesName = "fabric-biome-api-v1"
 version = getSubprojectVersion(project)
 
 loom {
