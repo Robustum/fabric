@@ -20,6 +20,8 @@ import org.jetbrains.annotations.ApiStatus;
 
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.item.ItemStack;
+import net.minecraft.screen.ScreenHandler;
 import net.minecraft.util.Hand;
 
 import net.fabricmc.fabric.api.transfer.v1.storage.base.CombinedStorage;
@@ -33,14 +35,10 @@ import net.fabricmc.fabric.impl.transfer.item.CursorSlotWrapper;
  * with an additional transactional wrapper for {@link PlayerInventory#offerOrDrop}.
  *
  * <p>Note that this is a wrapper around all the slots of the player inventory.
- * However, {@link #insert} is overriden to behave like {@link #offer}.
+ * However, {@link #insert} is overridden to behave like {@link #offer}.
  * For simple insertions, {@link #offer} or {@link #offerOrDrop} is recommended.
  * {@link #getSlots} can also be used and combined with {@link CombinedStorage} to retrieve a wrapper around a specific range of slots.
- *
- * <p><b>Experimental feature</b>, we reserve the right to remove or change it without further notice.
- * The transfer API is a complex addition, and we want to be able to correct possible design mistakes.
  */
-@ApiStatus.Experimental
 @ApiStatus.NonExtendable
 // TODO: Consider explicitly syncing stacks by sending a ScreenHandlerSlotUpdateS2CPacket if that proves to be necessary.
 // TODO: Vanilla doesn't seem to be doing it reliably, so we ignore it for now.
@@ -117,15 +115,47 @@ public interface PlayerInventoryStorage extends InventoryStorage {
 	long offer(ItemVariant variant, long maxAmount, TransactionContext transaction);
 
 	/**
-	 * Drop items in the world at the player's location.
+	 * Throw items in the world from the player's location.
+	 *
+	 * <p>Note: This function has full transaction support, and will not actually drop the items until the outermost transaction is committed.
+	 *
+	 * @param variant The variant to drop.
+	 * @param amount How many of the variant to drop.
+	 * @param throwRandomly If true, the variant will be thrown in a random direction from the entity regardless of which direction the entity is facing.
+	 * @param retainOwnership If true, set the {@code Thrower} NBT data to the player's UUID.
+	 * @param transaction The transaction this operation is part of.
+	 * @see PlayerEntity#dropItem(ItemStack, boolean, boolean)
+	 */
+	void drop(ItemVariant variant, long amount, boolean throwRandomly, boolean retainOwnership, TransactionContext transaction);
+
+	/**
+	 * Throw items in the world from the player's location.
+	 *
+	 * <p>Note: This function has full transaction support, and will not actually drop the items until the outermost transaction is committed.
+	 *
+	 * @param variant The variant to drop.
+	 * @param amount How many of the variant to drop.
+	 * @param retainOwnership If true, set the {@code Thrower} NBT data to the player's UUID.
+	 * @param transaction The transaction this operation is part of.
+	 * @see PlayerEntity#dropItem(ItemStack, boolean, boolean)
+	 */
+	default void drop(ItemVariant variant, long amount, boolean retainOwnership, TransactionContext transaction) {
+		drop(variant, amount, false, retainOwnership, transaction);
+	}
+
+	/**
+	 * Throw items in the world from the player's location.
 	 *
 	 * <p>Note: This function has full transaction support, and will not actually drop the items until the outermost transaction is committed.
 	 *
 	 * @param variant The variant to drop.
 	 * @param amount How many of the variant to drop.
 	 * @param transaction The transaction this operation is part of.
+	 * @see PlayerEntity#dropItem(ItemStack, boolean, boolean)
 	 */
-	void drop(ItemVariant variant, long amount, TransactionContext transaction);
+	default void drop(ItemVariant variant, long amount, TransactionContext transaction) {
+		drop(variant, amount, false, transaction);
+	}
 
 	/**
 	 * Return a wrapper around the current slot of the passed hand.

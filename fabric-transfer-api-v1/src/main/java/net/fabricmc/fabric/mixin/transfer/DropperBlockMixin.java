@@ -35,6 +35,8 @@ import net.fabricmc.fabric.api.transfer.v1.storage.Storage;
 import net.fabricmc.fabric.api.transfer.v1.storage.StorageUtil;
 import net.fabricmc.fabric.impl.transfer.TransferApiImpl;
 
+import java.util.Objects;
+
 /**
  * Allows droppers to insert into ItemVariant storages.
  */
@@ -49,11 +51,11 @@ public class DropperBlockMixin {
 			cancellable = true,
 			allow = 1
 	)
-	public void hookDispense(ServerWorld world, BlockPos pos, CallbackInfo ci) {
-		DispenserBlockEntity dispenser = (DispenserBlockEntity) world.getBlockEntity(pos);
-		Direction direction = dispenser.getCachedState().get(DispenserBlock.FACING);
+	public void hookDispense(ServerWorld serverWorld, BlockPos pos, CallbackInfo ci) {
+		DispenserBlockEntity dispenser = (DispenserBlockEntity) serverWorld.getBlockEntity(pos);
+		Direction direction = Objects.requireNonNull(dispenser).getCachedState().get(DispenserBlock.FACING);
 
-		Storage<ItemVariant> target = ItemStorage.SIDED.find(world, pos.offset(direction), direction.getOpposite());
+		Storage<ItemVariant> target = ItemStorage.SIDED.find(serverWorld, pos.offset(direction), direction.getOpposite());
 
 		if (target != null) {
 			// Always cancel if a storage is available.

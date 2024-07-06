@@ -16,7 +16,13 @@
 
 package net.fabricmc.fabric.api.transfer.v1.storage.base;
 
-import org.jetbrains.annotations.ApiStatus;
+import java.util.function.Function;
+import java.util.function.Supplier;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import net.minecraft.nbt.CompoundTag;
 
 import net.fabricmc.fabric.api.transfer.v1.storage.StoragePreconditions;
 import net.fabricmc.fabric.api.transfer.v1.storage.TransferVariant;
@@ -32,16 +38,20 @@ import net.fabricmc.fabric.api.transfer.v1.transaction.base.SnapshotParticipant;
  * If one of these two functions is overridden to always return false, implementors may also wish to override
  * {@link #supportsInsertion} and/or {@link #supportsExtraction}.
  *
- * <p><b>Experimental feature</b>, we reserve the right to remove or change it without further notice.
- * The transfer API is a complex addition, and we want to be able to correct possible design mistakes.
+ * @see net.fabricmc.fabric.api.transfer.v1.fluid.base.SingleFluidStorage SingleFluidStorage for fluid variants.
+ * @see net.fabricmc.fabric.api.transfer.v1.item.base.SingleItemStorage SingleItemStorage for item variants.
  */
-@ApiStatus.Experimental
 public abstract class SingleVariantStorage<T extends TransferVariant<?>> extends SnapshotParticipant<ResourceAmount<T>> implements SingleSlotStorage<T> {
+	private static final Logger LOGGER = LogManager.getLogger("fabric-transfer-api-v1/variant-storage");
+
 	public T variant = getBlankVariant();
 	public long amount = 0;
 
 	/**
 	 * Return the blank variant.
+	 *
+	 * <p>Note: this is called very early in the constructor.
+	 * If fields need to be accessed from this function, make sure to re-initialize {@link #variant} yourself.
 	 */
 	protected abstract T getBlankVariant();
 
@@ -81,9 +91,9 @@ public abstract class SingleVariantStorage<T extends TransferVariant<?>> extends
 				} else {
 					amount += insertedAmount;
 				}
-			}
 
-			return insertedAmount;
+				return insertedAmount;
+			}
 		}
 
 		return 0;
@@ -103,9 +113,9 @@ public abstract class SingleVariantStorage<T extends TransferVariant<?>> extends
 				if (amount == 0) {
 					variant = getBlankVariant();
 				}
-			}
 
-			return extractedAmount;
+				return extractedAmount;
+			}
 		}
 
 		return 0;
@@ -140,5 +150,43 @@ public abstract class SingleVariantStorage<T extends TransferVariant<?>> extends
 	protected void readSnapshot(ResourceAmount<T> snapshot) {
 		variant = snapshot.resource();
 		amount = snapshot.amount();
+	}
+
+	@Override
+	public String toString() {
+		return "SingleVariantStorage[%d %s]".formatted(amount, variant);
+	}
+
+	/**
+	 * Read a {@link SingleVariantStorage} from NBT.
+	 *
+	 * @param storage  the {@link SingleVariantStorage} to read into
+	 * @param fromNbt  the item variant codec
+	 * @param fallback the fallback item variant, used when the NBT is invalid
+	 * @param nbt      the NBT to read from
+	 * @param <T>      the type of the item variant
+	 */
+	public static <T extends TransferVariant<?>> void readNbt(SingleVariantStorage<T> storage, Function<CompoundTag, T> fromNbt, Supplier<T> fallback, CompoundTag nbt) {
+		try {
+			storage.variant = fromNbt.apply(nbt.getCompound("variant"));
+		} catch (Exception e) {
+			LOGGER.debug("Failed to load an ItemVariant from NBT: {}", e.getLocalizedMessage());
+			storage.variant = fallback.get();
+		}
+
+		storage.amount = nbt.getLong("amount");
+	}
+
+	/**
+	 * Write a {@link SingleVariantStorage} to NBT.
+	 *
+	 * @param storage the {@link SingleVariantStorage} to write from
+	 * @param toNbt   the item variant codec
+	 * @param nbt     the NBT to write to
+	 * @param <T>     the type of the item variant
+	 */
+	public static <T extends TransferVariant<?>> void writeNbt(SingleVariantStorage<T> storage, Function<T, CompoundTag> toNbt, CompoundTag nbt) {
+		nbt.put("variant", toNbt.apply(storage.variant));
+		nbt.putLong("amount", storage.amount);
 	}
 }

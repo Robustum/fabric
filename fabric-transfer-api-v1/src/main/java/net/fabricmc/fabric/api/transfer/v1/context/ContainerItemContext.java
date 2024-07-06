@@ -18,12 +18,14 @@ package net.fabricmc.fabric.api.transfer.v1.context;
 
 import java.util.List;
 
-import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.UnmodifiableView;
 
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.ItemUsage;
+import net.minecraft.screen.ScreenHandler;
 import net.minecraft.util.Hand;
 
 import net.fabricmc.fabric.api.lookup.v1.item.ItemApiLookup;
@@ -34,7 +36,8 @@ import net.fabricmc.fabric.api.transfer.v1.storage.StoragePreconditions;
 import net.fabricmc.fabric.api.transfer.v1.storage.base.SingleSlotStorage;
 import net.fabricmc.fabric.api.transfer.v1.transaction.Transaction;
 import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
-import net.fabricmc.fabric.impl.transfer.context.InitialContentsContainerItemContext;
+import net.fabricmc.fabric.impl.transfer.context.ConstantContainerItemContext;
+import net.fabricmc.fabric.impl.transfer.context.CreativeInteractionContainerItemContext;
 import net.fabricmc.fabric.impl.transfer.context.PlayerContainerItemContext;
 import net.fabricmc.fabric.impl.transfer.context.SingleSlotContainerItemContext;
 
@@ -80,14 +83,36 @@ import net.fabricmc.fabric.impl.transfer.context.SingleSlotContainerItemContext;
  *     <li>Exchange some of the current variant with another variant through {@link #exchange}.
  *     In the water bucket example, this function can be used to combine steps 1, 2 and 3.</li>
  * </ul>
- *
- * <p><b>Experimental feature</b>, we reserve the right to remove or change it without further notice.
- * The transfer API is a complex addition, and we want to be able to correct possible design mistakes.
  */
-@ApiStatus.Experimental
 public interface ContainerItemContext {
 	/**
-	 * Return a context for the passed player's hand. This is recommended for item use interactions.
+	 * Returns a context for interaction with a player's hand. This is recommended for item use interactions.
+	 *
+	 * <p>In creative mode, {@link #forCreativeInteraction} is used with the hand stack.
+	 * Otherwise, {@link #ofPlayerHand} is used.
+	 * This matches the behavior of {@link ItemUsage#exchangeStack}.
+	 */
+	static ContainerItemContext forPlayerInteraction(PlayerEntity player, Hand hand) {
+		if (player.isCreative()) {
+			return forCreativeInteraction(player, player.getStackInHand(hand));
+		} else {
+			return ofPlayerHand(player, hand);
+		}
+	}
+
+	/**
+	 * Returns a context for creative interaction.
+	 *
+	 * <p>The stack will never be modified, and any updated stack will only be added to the player's inventory
+	 * if the player's inventory doesn't already contain it.
+	 * This matches the creative behavior of {@link ItemUsage#exchangeStack}.
+	 */
+	static ContainerItemContext forCreativeInteraction(PlayerEntity player, ItemStack interactingStack) {
+		return new CreativeInteractionContainerItemContext(ItemVariant.of(interactingStack), interactingStack.getCount(), player);
+	}
+
+	/**
+	 * Return a context for the passed player's hand.
 	 */
 	static ContainerItemContext ofPlayerHand(PlayerEntity player, Hand hand) {
 		return new PlayerContainerItemContext(player, hand);
@@ -117,24 +142,24 @@ public interface ContainerItemContext {
 	}
 
 	/**
-	 * Return a context that can accept anything, and will accept (and destroy) any overflow items, with some initial content.
+	 * Return a context that always has some content, and will accept (and destroy) any overflow items.
 	 * This can typically be used to check if a stack provides an API, or simulate operations on the returned API,
 	 * for example to simulate how much fluid could be extracted from the stack.
 	 *
 	 * <p>Note that the stack can never be mutated by this function: its contents are copied directly.
 	 */
-	static ContainerItemContext withInitial(ItemStack initialContent) {
-		return withInitial(ItemVariant.of(initialContent), initialContent.getCount());
+	static ContainerItemContext withConstant(ItemStack constantContent) {
+		return withConstant(ItemVariant.of(constantContent), constantContent.getCount());
 	}
 
 	/**
-	 * Return a context that can accept anything, and will accept (and destroy) any overflow items, with some initial variant and amount.
-	 * This can typically be used to check if a variant provides an API, or simulate operations on the returned API,
+	 * Return a context that always has some content, and will accept (and destroy) any overflow items.
+	 * This can typically be used to check if a stack provides an API, or simulate operations on the returned API,
 	 * for example to simulate how much fluid could be extracted from the variant and amount.
 	 */
-	static ContainerItemContext withInitial(ItemVariant initialVariant, long initialAmount) {
-		StoragePreconditions.notNegative(initialAmount);
-		return new InitialContentsContainerItemContext(initialVariant, initialAmount);
+	static ContainerItemContext withConstant(ItemVariant constantVariant, long constantAmount) {
+		StoragePreconditions.notNegative(constantAmount);
+		return new ConstantContainerItemContext(constantVariant, constantAmount);
 	}
 
 	/**
@@ -150,7 +175,7 @@ public interface ContainerItemContext {
 
 	/**
 	 * Return the current item variant of this context, that is the variant in the slot of the context.
-	 * If the result is non blank, {@link #getAmount} should be
+	 * If the result is not blank, {@link #getAmount} should be positive.
 	 */
 	default ItemVariant getItemVariant() {
 		return getMainSlot().getResource();
@@ -199,7 +224,7 @@ public interface ContainerItemContext {
 	 * @param newVariant The variant of the items after the conversion. May not be blank.
 	 * @param maxAmount The maximum amount of items to convert. May not be negative.
 	 * @param transaction The transaction this operation is part of.
-	 * @return A nonnegative integer not greater than maxAmount: the amount that was transformed.
+	 * @return A non-negative integer not greater than maxAmount: the amount that was transformed.
 	 */
 	default long exchange(ItemVariant newVariant, long maxAmount, TransactionContext transaction) {
 		StoragePreconditions.notBlankNotNegative(newVariant, maxAmount);
@@ -236,5 +261,6 @@ public interface ContainerItemContext {
 	 *
 	 * @return An unmodifiable list containing additional slots of this context. If no additional slot is available, the list is empty.
 	 */
+	@UnmodifiableView
 	List<SingleSlotStorage<ItemVariant>> getAdditionalSlots();
 }

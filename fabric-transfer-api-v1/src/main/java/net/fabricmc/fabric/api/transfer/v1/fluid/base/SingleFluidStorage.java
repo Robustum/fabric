@@ -16,132 +16,64 @@
 
 package net.fabricmc.fabric.api.transfer.v1.fluid.base;
 
-import org.jetbrains.annotations.ApiStatus;
+import java.util.Objects;
+
+import net.minecraft.nbt.CompoundTag;
 
 import net.fabricmc.fabric.api.transfer.v1.fluid.FluidVariant;
 import net.fabricmc.fabric.api.transfer.v1.storage.StoragePreconditions;
-import net.fabricmc.fabric.api.transfer.v1.storage.base.ResourceAmount;
-import net.fabricmc.fabric.api.transfer.v1.storage.base.SingleSlotStorage;
+import net.fabricmc.fabric.api.transfer.v1.storage.TransferVariant;
 import net.fabricmc.fabric.api.transfer.v1.storage.base.SingleVariantStorage;
-import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
-import net.fabricmc.fabric.api.transfer.v1.transaction.base.SnapshotParticipant;
 
 /**
- * @deprecated Superseded by {@link SingleVariantStorage}. Will be removed in a future iteration of the API.
+ * A storage that can store a single fluid variant at any given time.
+ * Implementors should at least override {@link #getCapacity(TransferVariant) getCapacity(FluidVariant)},
+ * and probably {@link #onFinalCommit} as well for {@code markDirty()} and similar calls.
+ *
+ * <p>This is a convenient specialization of {@link SingleVariantStorage} for fluids that additionally offers methods
+ * to read the contents of the storage from NBT.
  */
-@ApiStatus.Experimental
-@ApiStatus.ScheduledForRemoval
-@Deprecated
-public abstract class SingleFluidStorage extends SnapshotParticipant<ResourceAmount<FluidVariant>> implements SingleSlotStorage<FluidVariant> {
-	public FluidVariant fluidVariant = FluidVariant.blank();
-	public long amount;
-
+public abstract class SingleFluidStorage extends SingleVariantStorage<FluidVariant> {
 	/**
-	 * Implement if you want.
+	 * Create a fluid storage with a fixed capacity and a change handler.
+	 *
+	 * @param capacity Fixed capacity of the fluid storage. Must be non-negative.
+	 * @param onChange Change handler, generally for {@code markDirty()} or similar calls. May not be null.
 	 */
-	protected void markDirty() {
-	}
+	public static SingleFluidStorage withFixedCapacity(long capacity, Runnable onChange) {
+		StoragePreconditions.notNegative(capacity);
+		Objects.requireNonNull(onChange, "onChange may not be null");
 
-	/**
-	 * @return {@code true} if the passed non-blank fluid variant can be inserted, {@code false} otherwise.
-	 */
-	protected boolean canInsert(FluidVariant fluidVariant) {
-		return true;
-	}
-
-	/**
-	 * @return {@code true} if the passed non-blank fluid variant can be extracted, {@code false} otherwise.
-	 */
-	protected boolean canExtract(FluidVariant fluidVariant) {
-		return true;
-	}
-
-	/**
-	 * @return The maximum capacity of this storage for the passed fluid variant.
-	 * If the passed fluid variant is blank, an estimate should be returned.
-	 */
-	protected abstract long getCapacity(FluidVariant fluidVariant);
-
-	@Override
-	public final boolean isResourceBlank() {
-		return fluidVariant.isBlank();
-	}
-
-	@Override
-	public final FluidVariant getResource() {
-		return fluidVariant;
-	}
-
-	@Override
-	public final long getAmount() {
-		return fluidVariant.isBlank() ? 0 : amount;
-	}
-
-	@Override
-	public final long getCapacity() {
-		return getCapacity(fluidVariant);
-	}
-
-	@Override
-	public final long insert(FluidVariant insertedFluid, long maxAmount, TransactionContext transaction) {
-		StoragePreconditions.notBlankNotNegative(insertedFluid, maxAmount);
-
-		if ((insertedFluid.equals(fluidVariant) || fluidVariant.isBlank()) && canInsert(insertedFluid)) {
-			long insertedAmount = Math.min(maxAmount, getCapacity(insertedFluid) - amount);
-
-			if (insertedAmount > 0) {
-				updateSnapshots(transaction);
-
-				// Just in case.
-				if (fluidVariant.isBlank()) {
-					amount = 0;
-				}
-
-				amount += insertedAmount;
-				fluidVariant = insertedFluid;
+		return new SingleFluidStorage() {
+			@Override
+			protected long getCapacity(FluidVariant variant) {
+				return capacity;
 			}
 
-			return insertedAmount;
-		}
-
-		return 0;
-	}
-
-	@Override
-	public final long extract(FluidVariant extractedFluid, long maxAmount, TransactionContext transaction) {
-		StoragePreconditions.notBlankNotNegative(extractedFluid, maxAmount);
-
-		if (extractedFluid.equals(fluidVariant) && canExtract(extractedFluid)) {
-			long extractedAmount = Math.min(maxAmount, amount);
-
-			if (extractedAmount > 0) {
-				updateSnapshots(transaction);
-				amount -= extractedAmount;
-
-				if (amount == 0) {
-					fluidVariant = FluidVariant.blank();
-				}
+			@Override
+			protected void onFinalCommit() {
+				onChange.run();
 			}
-
-			return extractedAmount;
-		}
-
-		return 0;
+		};
 	}
 
 	@Override
-	protected final ResourceAmount<FluidVariant> createSnapshot() {
-		return new ResourceAmount<>(fluidVariant, amount);
+	protected final FluidVariant getBlankVariant() {
+		return FluidVariant.blank();
 	}
 
-	@Override
-	protected final void readSnapshot(ResourceAmount<FluidVariant> snapshot) {
-		this.fluidVariant = snapshot.resource();
-		this.amount = snapshot.amount();
+	/**
+	 * Simple implementation of reading from NBT, to match what is written by {@link #writeNbt}.
+	 * Other formats are allowed, this is just a suggestion.
+	 */
+	public void readNbt(CompoundTag nbt) {
+		SingleVariantStorage.readNbt(this, FluidVariant::fromNbt, FluidVariant::blank, nbt);
 	}
 
-	@Override
-	protected final void onFinalCommit() {
-		markDirty();
+	/**
+	 * Simple implementation of writing to NBT. Other formats are allowed, this is just a convenient suggestion.
+	 */
+	public void writeNbt(CompoundTag nbt) {
+		SingleVariantStorage.writeNbt(this, FluidVariant::toNbt, nbt);
 	}
 }

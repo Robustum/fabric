@@ -17,27 +17,25 @@
 package net.fabricmc.fabric.impl.transfer.fluid;
 
 import java.util.Map;
-import java.util.Objects;
 
 import com.google.common.collect.MapMaker;
 import com.google.common.primitives.Ints;
 
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
-import net.minecraft.block.CauldronBlock;
-import net.minecraft.fluid.Fluids;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
-import net.fabricmc.fabric.api.transfer.v1.fluid.FluidConstants;
+import net.fabricmc.fabric.api.transfer.v1.fluid.CauldronFluidContent;
 import net.fabricmc.fabric.api.transfer.v1.fluid.FluidVariant;
 import net.fabricmc.fabric.api.transfer.v1.storage.StoragePreconditions;
 import net.fabricmc.fabric.api.transfer.v1.storage.base.SingleSlotStorage;
 import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
 import net.fabricmc.fabric.api.transfer.v1.transaction.base.SnapshotParticipant;
+import net.fabricmc.fabric.impl.transfer.DebugMessages;
 
 /**
- * Standard implementation of {@code Storage<FluidVariant>}.
+ * Standard implementation of {@code Storage<FluidVariant>}, using cauldron/fluid mappings registered in {@link CauldronFluidContent}.
  *
  * <p>Implementation notes:
  * <ul>
@@ -49,34 +47,10 @@ import net.fabricmc.fabric.api.transfer.v1.transaction.base.SnapshotParticipant;
  */
 public class CauldronStorage extends SnapshotParticipant<BlockState> implements SingleSlotStorage<FluidVariant> {
 	// Record is used for convenient constructor, hashcode and equals implementations.
-	private static final class WorldLocation {
-		private final World world;
-		private final BlockPos pos;
-
-		WorldLocation(World world, BlockPos pos) {
-			this.world = world;
-			this.pos = pos;
-		}
-
-		public World world() {
-			return world;
-		}
-
-		public BlockPos pos() {
-			return pos;
-		}
-
+	private record WorldLocation(World world, BlockPos pos) {
 		@Override
-		public boolean equals(Object o) {
-			if (this == o) return true;
-			if (o == null || getClass() != o.getClass()) return false;
-			WorldLocation that = (WorldLocation) o;
-			return Objects.equals(world, that.world) && Objects.equals(pos, that.pos);
-		}
-
-		@Override
-		public int hashCode() {
-			return Objects.hash(world, pos);
+		public String toString() {
+			return DebugMessages.forGlobalPos(world, pos);
 		}
 	}
 
@@ -101,20 +75,25 @@ public class CauldronStorage extends SnapshotParticipant<BlockState> implements 
 		lastReleasedSnapshot = snapshot;
 	}
 
-	private int getLevel() {
-		BlockState state = createSnapshot();
+	// Retrieve the current CauldronFluidContent.
+	private CauldronFluidContent getCurrentContent() {
+		CauldronFluidContent content = CauldronFluidContent.getForBlock(createSnapshot().getBlock());
 
-		if (!state.isOf(Blocks.CAULDRON)) {
+		if (content == null) {
 			throw new IllegalStateException("Unexpected error: no cauldron at location " + location);
 		}
 
-		return state.get(CauldronBlock.LEVEL);
+		return content;
 	}
 
 	// Called by insert and extract to update the block state.
-	private void updateLevel(int level, TransactionContext transaction) {
+	private void updateLevel(CauldronFluidContent newContent, int level, TransactionContext transaction) {
 		updateSnapshots(transaction);
-		BlockState newState = Blocks.CAULDRON.getDefaultState().with(CauldronBlock.LEVEL, level);
+		BlockState newState = newContent.block.getDefaultState();
+
+		if (newContent.levelProperty != null) {
+			newState = newState.with(newContent.levelProperty, level);
+		}
 
 		// Set block state without updates.
 		location.world.setBlockState(location.pos, newState, 0);
@@ -124,16 +103,35 @@ public class CauldronStorage extends SnapshotParticipant<BlockState> implements 
 	public long insert(FluidVariant fluidVariant, long maxAmount, TransactionContext transaction) {
 		StoragePreconditions.notBlankNotNegative(fluidVariant, maxAmount);
 
-		if (fluidVariant.isOf(Fluids.WATER)) {
-			int maxLevelsInserted = Ints.saturatedCast(maxAmount / FluidConstants.BOTTLE);
-			int currentLevel = getLevel();
-			int levelsInserted = Math.min(maxLevelsInserted, 3 - currentLevel);
+		CauldronFluidContent insertContent = CauldronFluidContent.getForFluid(fluidVariant.getFluid());
 
-			if (levelsInserted > 0) {
-				updateLevel(currentLevel + levelsInserted, transaction);
+		if (insertContent != null) {
+			int maxLevelsInserted = Ints.saturatedCast(maxAmount / insertContent.amountPerLevel);
+
+			if (getAmount() == 0) {
+				// Currently empty, so we can accept any fluid.
+				int levelsInserted = Math.min(maxLevelsInserted, insertContent.maxLevel);
+
+				if (levelsInserted > 0) {
+					updateLevel(insertContent, levelsInserted, transaction);
+				}
+
+				return levelsInserted * insertContent.amountPerLevel;
 			}
 
-			return levelsInserted * FluidConstants.BOTTLE;
+			CauldronFluidContent currentContent = getCurrentContent();
+
+			if (fluidVariant.isOf(currentContent.fluid)) {
+				// Otherwise we can only accept the same fluid as the current one.
+				int currentLevel = currentContent.currentLevel(createSnapshot());
+				int levelsInserted = Math.min(maxLevelsInserted, currentContent.maxLevel - currentLevel);
+
+				if (levelsInserted > 0) {
+					updateLevel(currentContent, currentLevel + levelsInserted, transaction);
+				}
+
+				return levelsInserted * currentContent.amountPerLevel;
+			}
 		}
 
 		return 0;
@@ -143,16 +141,25 @@ public class CauldronStorage extends SnapshotParticipant<BlockState> implements 
 	public long extract(FluidVariant fluidVariant, long maxAmount, TransactionContext transaction) {
 		StoragePreconditions.notBlankNotNegative(fluidVariant, maxAmount);
 
-		if (fluidVariant.isOf(Fluids.WATER)) {
-			int maxLevelsExtracted = Ints.saturatedCast(maxAmount / FluidConstants.BOTTLE);
-			int currentLevel = getLevel();
+		CauldronFluidContent currentContent = getCurrentContent();
+
+		if (fluidVariant.isOf(currentContent.fluid)) {
+			int maxLevelsExtracted = Ints.saturatedCast(maxAmount / currentContent.amountPerLevel);
+			int currentLevel = currentContent.currentLevel(createSnapshot());
 			int levelsExtracted = Math.min(maxLevelsExtracted, currentLevel);
 
 			if (levelsExtracted > 0) {
-				updateLevel(currentLevel - levelsExtracted, transaction);
+				if (levelsExtracted == currentLevel) {
+					// Fully extract -> back to empty cauldron
+					updateSnapshots(transaction);
+					location.world.setBlockState(location.pos, Blocks.CAULDRON.getDefaultState(), 0);
+				} else {
+					// Otherwise just decrease levels
+					updateLevel(currentContent, currentLevel - levelsExtracted, transaction);
+				}
 			}
 
-			return levelsExtracted * FluidConstants.BOTTLE;
+			return levelsExtracted * currentContent.amountPerLevel;
 		}
 
 		return 0;
@@ -165,17 +172,19 @@ public class CauldronStorage extends SnapshotParticipant<BlockState> implements 
 
 	@Override
 	public FluidVariant getResource() {
-		return FluidVariant.of(Fluids.WATER);
+		return FluidVariant.of(getCurrentContent().fluid);
 	}
 
 	@Override
 	public long getAmount() {
-		return getLevel() * FluidConstants.BOTTLE;
+		CauldronFluidContent currentContent = getCurrentContent();
+		return currentContent.currentLevel(createSnapshot()) * currentContent.amountPerLevel;
 	}
 
 	@Override
 	public long getCapacity() {
-		return FluidConstants.BUCKET;
+		CauldronFluidContent currentContent = getCurrentContent();
+		return currentContent.maxLevel * currentContent.amountPerLevel;
 	}
 
 	@Override
@@ -199,5 +208,10 @@ public class CauldronStorage extends SnapshotParticipant<BlockState> implements 
 			// Then do the actual change with normal block updates
 			location.world.setBlockState(location.pos, state);
 		}
+	}
+
+	@Override
+	public String toString() {
+		return "CauldronStorage[" + location + "]";
 	}
 }

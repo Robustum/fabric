@@ -20,36 +20,35 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-import org.jetbrains.annotations.ApiStatus;
+import net.minecraft.client.item.TooltipContext;
+
+import net.minecraft.text.LiteralText;
+
+import net.minecraft.util.registry.Registry;
+
 import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.item.TooltipContext;
 import net.minecraft.client.texture.Sprite;
 import net.minecraft.fluid.Fluid;
-import net.minecraft.text.LiteralText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.registry.Registry;
 import net.minecraft.world.BlockRenderView;
 
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.lookup.v1.custom.ApiProviderMap;
 import net.fabricmc.fabric.api.transfer.v1.fluid.FluidVariant;
+import net.fabricmc.fabric.api.transfer.v1.fluid.FluidVariantAttributes;
 
 /**
  * Client-side display of fluid variants.
- *
- * <p><b>Experimental feature</b>, we reserve the right to remove or change it without further notice.
- * The transfer API is a complex addition, and we want to be able to correct possible design mistakes.
  */
-@ApiStatus.Experimental
-@Environment(EnvType.CLIENT)
-public class FluidVariantRendering {
+public final class FluidVariantRendering {
 	private static final ApiProviderMap<Fluid, FluidVariantRenderHandler> HANDLERS = ApiProviderMap.create();
 	private static final FluidVariantRenderHandler DEFAULT_HANDLER = new FluidVariantRenderHandler() { };
+
+	private FluidVariantRendering () {
+	}
 
 	/**
 	 * Register a render handler for the passed fluid.
@@ -77,13 +76,6 @@ public class FluidVariantRendering {
 	}
 
 	/**
-	 * Return the name of the passed fluid variant.
-	 */
-	public static Text getName(FluidVariant fluidVariant) {
-		return getHandlerOrDefault(fluidVariant.getFluid()).getName(fluidVariant);
-	}
-
-	/**
 	 * Return a mutable list: the tooltip for the passed fluid variant, including the name and additional lines if available
 	 * and the id of the fluid if advanced tooltips are enabled.
 	 *
@@ -101,7 +93,7 @@ public class FluidVariantRendering {
 		List<Text> tooltip = new ArrayList<>();
 
 		// Name first
-		tooltip.add(getName(fluidVariant));
+		tooltip.add(FluidVariantAttributes.getName(fluidVariant));
 
 		// Additional tooltip information
 		getHandlerOrDefault(fluidVariant.getFluid()).appendTooltip(fluidVariant, tooltip, context);
@@ -153,12 +145,5 @@ public class FluidVariantRendering {
 	 */
 	public static int getColor(FluidVariant fluidVariant, @Nullable BlockRenderView view, @Nullable BlockPos pos) {
 		return getHandlerOrDefault(fluidVariant.getFluid()).getColor(fluidVariant, view, pos);
-	}
-
-	/**
-	 * Return {@code true} if this fluid variant should be rendered as filling tanks from the top.
-	 */
-	public static boolean fillsFromTop(FluidVariant fluidVariant) {
-		return getHandlerOrDefault(fluidVariant.getFluid()).fillsFromTop(fluidVariant);
 	}
 }

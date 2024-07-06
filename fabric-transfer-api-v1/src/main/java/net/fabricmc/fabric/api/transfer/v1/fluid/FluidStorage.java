@@ -16,18 +16,16 @@
 
 package net.fabricmc.fabric.api.transfer.v1.fluid;
 
-import com.google.common.base.Preconditions;
-import org.jetbrains.annotations.ApiStatus;
+import net.minecraft.potion.PotionUtil;
+
 import org.jetbrains.annotations.Nullable;
 
-import net.minecraft.block.Blocks;
 import net.minecraft.fluid.Fluid;
 import net.minecraft.fluid.Fluids;
 import net.minecraft.item.BucketItem;
 import net.minecraft.item.Item;
-import net.minecraft.item.Items;
 import net.minecraft.item.ItemStack;
-import net.minecraft.potion.PotionUtil;
+import net.minecraft.item.Items;
 import net.minecraft.potion.Potions;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Direction;
@@ -40,34 +38,34 @@ import net.fabricmc.fabric.api.transfer.v1.fluid.base.EmptyItemFluidStorage;
 import net.fabricmc.fabric.api.transfer.v1.fluid.base.FullItemFluidStorage;
 import net.fabricmc.fabric.api.transfer.v1.item.ItemVariant;
 import net.fabricmc.fabric.api.transfer.v1.storage.Storage;
-import net.fabricmc.fabric.impl.transfer.fluid.CauldronStorage;
-import net.fabricmc.fabric.impl.transfer.fluid.EmptyBucketStorage;
+import net.fabricmc.fabric.api.transfer.v1.storage.base.SidedStorageBlockEntity;
 import net.fabricmc.fabric.impl.transfer.fluid.CombinedProvidersImpl;
+import net.fabricmc.fabric.impl.transfer.fluid.EmptyBucketStorage;
 import net.fabricmc.fabric.impl.transfer.fluid.WaterPotionStorage;
 import net.fabricmc.fabric.mixin.transfer.BucketItemAccessor;
 
 /**
  * Access to {@link Storage Storage&lt;FluidVariant&gt;} instances.
- *
- * <p><b>Experimental feature</b>, we reserve the right to remove or change it without further notice.
- * The transfer API is a complex addition, and we want to be able to correct possible design mistakes.
  */
-@ApiStatus.Experimental
 public final class FluidStorage {
 	/**
 	 * Sided block access to fluid variant storages.
 	 * Fluid amounts are always expressed in {@linkplain FluidConstants droplets}.
-	 * The {@code Direction} parameter may never be null.
+	 * The {@code Direction} parameter may be null, meaning that the full inventory (ignoring side restrictions) should be queried.
 	 * Refer to {@link BlockApiLookup} for documentation on how to use this field.
+	 *
+	 * <p>A simple way to expose fluid variant storages for a block entity hierarchy is to extend {@link SidedStorageBlockEntity}.
 	 *
 	 * <p>When the operations supported by a storage change,
 	 * that is if the return value of {@link Storage#supportsInsertion} or {@link Storage#supportsExtraction} changes,
 	 * the storage should notify its neighbors with a block update so that they can refresh their connections if necessary.
 	 *
-	 * <p>May only be queried on the logical server thread, never client-side or from another thread!
+	 * <p>This may be queried safely both on the logical server and on the logical client threads.
+	 * On the server thread (i.e. with a server world), all transfer functionality is always supported.
+	 * On the client thread (i.e. with a client world), contents of queried Storages are unreliable and should not be modified.
 	 */
-	public static final BlockApiLookup<Storage<FluidVariant>, Direction> SIDED =
-			BlockApiLookup.get(new Identifier("fabric:sided_fluid_storage"), Storage.asClass(), Direction.class);
+	public static final BlockApiLookup<Storage<FluidVariant>, @Nullable Direction> SIDED =
+			BlockApiLookup.get(new Identifier("fabric", "sided_fluid_storage"), Storage.asClass(), Direction.class);
 
 	/**
 	 * Item access to fluid variant storages.
@@ -85,7 +83,7 @@ public final class FluidStorage {
 	 * Returned APIs should behave the same regardless of the logical side.
 	 */
 	public static final ItemApiLookup<Storage<FluidVariant>, ContainerItemContext> ITEM =
-			ItemApiLookup.get(new Identifier("fabric:fluid_storage"), Storage.asClass(), ContainerItemContext.class);
+			ItemApiLookup.get(new Identifier("fabric", "fluid_storage"), Storage.asClass(), ContainerItemContext.class);
 
 	/**
 	 * Get or create and register a {@link CombinedItemApiProvider} event for the passed item.
@@ -115,7 +113,7 @@ public final class FluidStorage {
 	 * This means that per-item combined providers registered through {@code combinedItemApiProvider} DO NOT prevent these general providers from running,
 	 * however regular providers registered through {@code ItemApiLookup#register...} that return a non-null API instance DO prevent it.
 	 */
-	public static Event<CombinedItemApiProvider> GENERAL_COMBINED_PROVIDER = CombinedProvidersImpl.createEvent(false);
+	public static final Event<CombinedItemApiProvider> GENERAL_COMBINED_PROVIDER = CombinedProvidersImpl.createEvent(false);
 
 	@FunctionalInterface
 	public interface CombinedItemApiProvider {
@@ -131,14 +129,17 @@ public final class FluidStorage {
 	}
 
 	static {
-		// Ensure that the lookup is only queried on the server side.
-		FluidStorage.SIDED.registerFallback((world, pos, state, blockEntity, context) -> {
-			Preconditions.checkArgument(!world.isClient(), "Sided fluid storage may only be queried for a server world.");
+		// Initialize vanilla cauldron wrappers
+		CauldronFluidContent.getForFluid(Fluids.WATER);
+
+		// Support for SidedStorageBlockEntity.
+		FluidStorage.SIDED.registerFallback((world, pos, state, blockEntity, direction) -> {
+			if (blockEntity instanceof SidedStorageBlockEntity sidedStorageBlockEntity) {
+				return sidedStorageBlockEntity.getFluidStorage(direction);
+			}
+
 			return null;
 		});
-
-		// Initialize vanilla cauldron wrappers
-		FluidStorage.SIDED.registerForBlocks((world, pos, state, be, context) -> CauldronStorage.get(world, pos), Blocks.CAULDRON);
 
 		// Register combined fallback
 		FluidStorage.ITEM.registerFallback((stack, context) -> GENERAL_COMBINED_PROVIDER.invoker().find(context));
@@ -146,8 +147,7 @@ public final class FluidStorage {
 		combinedItemApiProvider(Items.BUCKET).register(EmptyBucketStorage::new);
 		// Register full bucket storage
 		GENERAL_COMBINED_PROVIDER.register(context -> {
-			if (context.getItemVariant().getItem() instanceof BucketItem) {
-				BucketItem bucketItem = (BucketItem) context.getItemVariant().getItem();
+			if (context.getItemVariant().getItem() instanceof BucketItem bucketItem) {
 				Fluid bucketFluid = ((BucketItemAccessor) bucketItem).fabric_getFluid();
 
 				// Make sure the mapping is bidirectional.

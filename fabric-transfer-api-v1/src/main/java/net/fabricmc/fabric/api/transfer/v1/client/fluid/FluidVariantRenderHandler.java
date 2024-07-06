@@ -18,17 +18,15 @@ package net.fabricmc.fabric.api.transfer.v1.client.fluid;
 
 import java.util.List;
 
-import org.jetbrains.annotations.ApiStatus;
+import net.minecraft.client.item.TooltipContext;
+
 import org.jetbrains.annotations.Nullable;
 
-import net.minecraft.client.item.TooltipContext;
 import net.minecraft.client.texture.Sprite;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.BlockRenderView;
 
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.render.fluid.v1.FluidRenderHandler;
 import net.fabricmc.fabric.api.client.render.fluid.v1.FluidRenderHandlerRegistry;
 import net.fabricmc.fabric.api.transfer.v1.fluid.FluidVariant;
@@ -36,27 +34,15 @@ import net.fabricmc.fabric.api.transfer.v1.fluid.FluidVariant;
 /**
  * Defines how {@linkplain FluidVariant fluid variants} of a given Fluid should be displayed to clients.
  * Register with {@link FluidVariantRendering#register}.
- *
- * <p><b>Experimental feature</b>, we reserve the right to remove or change it without further notice.
- * The transfer API is a complex addition, and we want to be able to correct possible design mistakes.
  */
-@ApiStatus.Experimental
-@Environment(EnvType.CLIENT)
 public interface FluidVariantRenderHandler {
-	/**
-	 * Return the name that should be used for the passed fluid variant.
-	 */
-	default Text getName(FluidVariant fluidVariant) {
-		return fluidVariant.getFluid().getDefaultState().getBlockState().getBlock().getName();
-	}
-
 	/**
 	 * Append additional tooltips to the passed list if additional information is contained in the fluid variant.
 	 *
 	 * <p>The name of the fluid, and its identifier if the tooltip context is advanced, should not be appended.
 	 * They are already added by {@link FluidVariantRendering#getTooltip}.
 	 */
-	default void appendTooltip(FluidVariant fluidVariant, List<Text> tooltip, TooltipContext tooltipContext) {
+	default void appendTooltip(FluidVariant fluidVariant, List<Text> tooltip, TooltipContext context) {
 	}
 
 	/**
@@ -80,27 +66,7 @@ public interface FluidVariantRenderHandler {
 	}
 
 	/**
-	 * @deprecated Use and implement {@linkplain #getSprites(FluidVariant) the other more general overload}.
-	 * This one will be removed in a future iteration of the API.
-	 */
-	@Deprecated()
-	@Nullable
-	default Sprite getSprite(FluidVariant fluidVariant) {
-		Sprite[] sprites = getSprites(fluidVariant);
-		return sprites != null ? sprites[0] : null;
-	}
-
-	/**
-	 * @deprecated Use and implement {@linkplain #getColor(FluidVariant, BlockRenderView, BlockPos) the other more general overload}.
-	 * This one will be removed in a future iteration of the API.
-	 */
-	@Deprecated()
-	default int getColor(FluidVariant fluidVariant) {
-		return getColor(fluidVariant, null, null);
-	}
-
-	/**
-	 * Return the color to use when rendering {@linkplain #getSprite the sprite} of this fluid variant.
+	 * Return the color to use when rendering {@linkplain #getSprites the sprites} of this fluid variant.
 	 * Transparency (alpha) will generally be taken into account and should be specified as well.
 	 *
 	 * <p>The world and position are optional context parameters and may be {@code null}.
@@ -117,13 +83,5 @@ public interface FluidVariantRenderHandler {
 		} else {
 			return -1;
 		}
-	}
-
-	/**
-	 * Return {@code true} if this fluid should fill tanks from top.
-	 */
-	default boolean fillsFromTop(FluidVariant fluidVariant) {
-		// By default, fluids should be filled from the bottom.
-		return false;
 	}
 }

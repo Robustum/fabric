@@ -47,7 +47,6 @@ public class WaterPotionStorage implements ExtractionOnlyStorage<FluidVariant>, 
 
 	private static boolean isWaterPotion(ContainerItemContext context) {
 		ItemVariant variant = context.getItemVariant();
-
 		return variant.isOf(Items.POTION) && PotionUtil.getPotion(variant.getNbt()) == Potions.WATER;
 	}
 
@@ -113,5 +112,10 @@ public class WaterPotionStorage implements ExtractionOnlyStorage<FluidVariant>, 
 	public long getCapacity() {
 		// Capacity is the same as the amount.
 		return getAmount();
+	}
+
+	@Override
+	public String toString() {
+		return "WaterPotionStorage[" + context + "]";
 	}
 }

@@ -16,8 +16,6 @@
 
 package net.fabricmc.fabric.api.transfer.v1.storage.base;
 
-import org.jetbrains.annotations.ApiStatus;
-
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 
@@ -29,7 +27,7 @@ import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
 
 /**
  * Base implementation of a fixed-capacity "continuous" storage for item-provided storage APIs.
- * The item may not change, so the data has to be stored in the NBT of the stacks.
+ * The item may not change, so the data has to be stored in the components of the stacks.
  * This can be used for example to implement portable fluid tanks, fluid-containing jetpacks, and so on...
  * Continuous here means that they can store any integer amount between 0 and the capacity, unlike buckets or bottles.
  *
@@ -37,20 +35,16 @@ import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
  * <ul>
  *    <li>You must override {@link #getBlankResource()}, for example {@code return FluidVariant.blank();} for fluids.</li>
  *    <li>You must override {@link #getResource(ItemVariant)} and {@link #getAmount(ItemVariant)}.
- *    Generally you will read the resource and the amount from the NBT of the item variant.</li>
+ *    Generally you will read the resource and the amount from the components of the item variant.</li>
  *    <li>You must override {@link #getCapacity(TransferVariant)} to set the capacity of your storage.</li>
  *    <li>You must override {@link #getUpdatedVariant}. It is used to change the resource and the amount of the item variant.
- *    Generally you will copy the NBT, modify it, and then create a new variant from that.
- *    Copying the NBT instead of recreating it from scratch is important to keep custom names or enchantments.</li>
+ *    Generally you will copy the components, modify it, and then create a new variant from that.
+ *    Copying the components instead of recreating it from scratch is important to keep custom names or enchantments.</li>
  *    <li>You may also override {@link #canInsert} and {@link #canExtract} if you want to restrict insertion and/or extraction.</li>
  * </ul>
  *
  * @param <T> The type of the stored transfer variant.
- *
- * <b>Experimental feature</b>, we reserve the right to remove or change it without further notice.
- * The transfer API is a complex addition, and we want to be able to correct possible design mistakes.
  */
-@ApiStatus.Experimental
 public abstract class SingleVariantItemStorage<T extends TransferVariant<?>> implements SingleSlotStorage<T> {
 	/**
 	 * Reference to the context.
@@ -72,12 +66,12 @@ public abstract class SingleVariantItemStorage<T extends TransferVariant<?>> imp
 	protected abstract T getBlankResource();
 
 	/**
-	 * Return the current resource by reading the NBT of the passed variant.
+	 * Return the current resource by reading the components of the passed variant.
 	 */
 	protected abstract T getResource(ItemVariant currentVariant);
 
 	/**
-	 * Return the current amount by reading the NBT of the passed variant.
+	 * Return the current amount by reading the components of the passed variant.
 	 */
 	protected abstract long getAmount(ItemVariant currentVariant);
 
@@ -221,5 +215,10 @@ public abstract class SingleVariantItemStorage<T extends TransferVariant<?>> imp
 		} else {
 			return 0;
 		}
+	}
+
+	@Override
+	public String toString() {
+		return "SingleVariantItemStorage[" + context + "/" + item + "]";
 	}
 }

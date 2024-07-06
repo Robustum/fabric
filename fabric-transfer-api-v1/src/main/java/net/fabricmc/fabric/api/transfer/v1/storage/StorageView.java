@@ -16,21 +16,13 @@
 
 package net.fabricmc.fabric.api.transfer.v1.storage;
 
-import org.jetbrains.annotations.ApiStatus;
-
 import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
 
 /**
- * A view of a single stored resource in a {@link Storage}, for use with {@link Storage#iterator} or {@link Storage#exactView}.
- *
- * <p>A view is always tied to a specific transaction, and should not be accessed outside of it.
+ * A view of a single stored resource in a {@link Storage}, for use with {@link Storage#iterator}.
  *
  * @param <T> The type of the stored resource.
- *
- * <b>Experimental feature</b>, we reserve the right to remove or change it without further notice.
- * The transfer API is a complex addition, and we want to be able to correct possible design mistakes.
  */
-@ApiStatus.Experimental
 public interface StorageView<T> {
 	/**
 	 * Try to extract a resource from this view.
@@ -59,7 +51,19 @@ public interface StorageView<T> {
 
 	/**
 	 * @return The total amount of {@link #getResource} that could be stored in this view,
-	 * or an estimate of the number of resources that could be stored if this view has a blank resource.
+	 * or an estimated upper bound on the number of resources that could be stored if this view has a blank resource.
 	 */
 	long getCapacity();
+
+	/**
+	 * If this is view is a delegate around another storage view, return the underlying view.
+	 * This can be used to check if two views refer to the same inventory "slot".
+	 * <b>Do not try to extract from the underlying view, or you risk bypassing some checks.</b>
+	 *
+	 * <p>It is expected that two storage views with the same underlying view ({@code a.getUnderlyingView() == b.getUnderlyingView()})
+	 * share the same content, and mutating one should mutate the other. However, one of them may allow extraction, and the other may not.
+	 */
+	default StorageView<T> getUnderlyingView() {
+		return this;
+	}
 }

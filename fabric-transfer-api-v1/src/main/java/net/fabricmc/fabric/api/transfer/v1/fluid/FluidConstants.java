@@ -16,19 +16,18 @@
 
 package net.fabricmc.fabric.api.transfer.v1.fluid;
 
-import org.jetbrains.annotations.ApiStatus;
+import net.minecraft.fluid.FlowableFluid;
 
 /**
  * Constants for fluid transfer. In general, 1 bucket = 81000 droplets = 1 block.
  *
- * <p>If you don't know how much droplets you should pick for a specific resource that has a block form,
+ * <p>If you don't know how many droplets you should pick for a specific resource that has a block form,
  * the convention is to use 81000 droplets for what is worth one block of that resource.
- *
- * <p><b>Experimental feature</b>, we reserve the right to remove or change it without further notice.
- * The transfer API is a complex addition, and we want to be able to correct possible design mistakes.
  */
-@ApiStatus.Experimental
 public final class FluidConstants {
+	///////////////////////////
+	// ==== FLUID UNITS ==== //
+	///////////////////////////
 	public static final long BUCKET = 81000;
 	public static final long BOTTLE = 27000;
 	public static final long BLOCK = 81000;
@@ -53,6 +52,26 @@ public final class FluidConstants {
 			return total / denominator;
 		}
 	}
+
+	// ==========================
+	// ==== FLUID ATTRIBUTES ====
+	// ==========================
+	/**
+	 * Water temperature, in Kelvin.
+	 */
+	public static final int WATER_TEMPERATURE = 300;
+	/**
+	 * Lava temperature, in Kelvin.
+	 */
+	public static final int LAVA_TEMPERATURE = 1300;
+
+	public static final int WATER_VISCOSITY = 1000;
+	public static final int LAVA_VISCOSITY = 6000;
+	public static final int LAVA_VISCOSITY_NETHER = 2000;
+	/**
+	 * For flowable fluids, the viscosity should match {@code VISCOSITY_RATIO} * {@link FlowableFluid#getFlowSpeed}.
+	 */
+	public static final int VISCOSITY_RATIO = 200;
 
 	private FluidConstants() {
 	}

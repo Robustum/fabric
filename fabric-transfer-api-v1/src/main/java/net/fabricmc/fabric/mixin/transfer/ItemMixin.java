@@ -16,6 +16,8 @@
 
 package net.fabricmc.fabric.mixin.transfer;
 
+import net.minecraft.nbt.CompoundTag;
+
 import org.spongepowered.asm.mixin.Mixin;
 
 import net.minecraft.item.Item;
@@ -24,13 +26,16 @@ import net.fabricmc.fabric.api.transfer.v1.item.ItemVariant;
 import net.fabricmc.fabric.impl.transfer.item.ItemVariantCache;
 import net.fabricmc.fabric.impl.transfer.item.ItemVariantImpl;
 
+import org.spongepowered.asm.mixin.Unique;
+
 /**
  * Cache the ItemVariant with a null tag inside each Item directly.
  */
 @Mixin(Item.class)
 public class ItemMixin implements ItemVariantCache {
+	@Unique
 	@SuppressWarnings("ConstantConditions")
-	private final ItemVariant fabric_cachedItemVariant = new ItemVariantImpl((Item) (Object) this, null);
+	private final ItemVariant fabric_cachedItemVariant = new ItemVariantImpl((Item) (Object) this, new CompoundTag());
 
 	@Override
 	public ItemVariant fabric_getCachedItemVariant() {

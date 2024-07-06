@@ -21,6 +21,7 @@ import java.util.Objects;
 
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.UnmodifiableView;
 
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.inventory.Inventory;
@@ -28,7 +29,7 @@ import net.minecraft.inventory.SidedInventory;
 import net.minecraft.inventory.SimpleInventory;
 import net.minecraft.util.math.Direction;
 
-import net.fabricmc.fabric.api.transfer.v1.storage.Storage;
+import net.fabricmc.fabric.api.transfer.v1.storage.SlottedStorage;
 import net.fabricmc.fabric.api.transfer.v1.storage.base.CombinedStorage;
 import net.fabricmc.fabric.api.transfer.v1.storage.base.SingleSlotStorage;
 import net.fabricmc.fabric.impl.transfer.item.InventoryStorageImpl;
@@ -44,13 +45,9 @@ import net.fabricmc.fabric.impl.transfer.item.InventoryStorageImpl;
  *
  * <p><b>Important note:</b> This wrapper assumes that the inventory owns its slots.
  * If the inventory does not own its slots, for example because it delegates to another inventory, this wrapper should not be used!
- *
- * <p><b>Experimental feature</b>, we reserve the right to remove or change it without further notice.
- * The transfer API is a complex addition, and we want to be able to correct possible design mistakes.
  */
-@ApiStatus.Experimental
 @ApiStatus.NonExtendable
-public interface InventoryStorage extends Storage<ItemVariant> {
+public interface InventoryStorage extends SlottedStorage<ItemVariant> {
 	/**
 	 * Return a wrapper around an {@link Inventory}.
 	 *
@@ -69,11 +66,16 @@ public interface InventoryStorage extends Storage<ItemVariant> {
 	 * Retrieve an unmodifiable list of the wrappers for the slots in this inventory.
 	 * Each wrapper corresponds to a single slot in the inventory.
 	 */
+	@Override
+	@UnmodifiableView
 	List<SingleSlotStorage<ItemVariant>> getSlots();
 
-	/**
-	 * Retrieve a wrapper around a specific slot of the inventory.
-	 */
+	@Override
+	default int getSlotCount() {
+		return getSlots().size();
+	}
+
+	@Override
 	default SingleSlotStorage<ItemVariant> getSlot(int slot) {
 		return getSlots().get(slot);
 	}

@@ -73,11 +73,7 @@ import net.fabricmc.fabric.impl.transfer.transaction.TransactionManagerImpl;
  * <p>Every transaction is only valid on the thread it was opened on,
  * and attempts to use it on another thread will throw an exception.
  * Consequently, transactions can be concurrent across multiple threads, as long as they don't share any state.
- *
- * <p><b>Experimental feature</b>, we reserve the right to remove or change it without further notice.
- * The transfer API is a complex addition, and we want to be able to correct possible design mistakes.
  */
-@ApiStatus.Experimental
 @ApiStatus.NonExtendable
 public interface Transaction extends AutoCloseable, TransactionContext {
 	/**
@@ -90,14 +86,21 @@ public interface Transaction extends AutoCloseable, TransactionContext {
 	}
 
 	/**
-	 * @return True if a transaction is open on the current thread, and false otherwise.
+	 * @return True if a transaction is open or closing on the current thread, and false otherwise.
 	 */
 	static boolean isOpen() {
-		return TransactionManagerImpl.MANAGERS.get().isOpen();
+		return getLifecycle() != Lifecycle.NONE;
 	}
 
 	/**
-	 * Open a nested transaction if {@code maybeParent} is non null, or an outer transaction if {@code maybeParent} is null.
+	 * @return The current lifecycle of the transaction stack on this thread.
+	 */
+	static Lifecycle getLifecycle() {
+		return TransactionManagerImpl.MANAGERS.get().getLifecycle();
+	}
+
+	/**
+	 * Open a nested transaction if {@code maybeParent} is non-null, or an outer transaction if {@code maybeParent} is null.
 	 */
 	static Transaction openNested(@Nullable TransactionContext maybeParent) {
 		return maybeParent == null ? openOuter() : maybeParent.openNested();
@@ -148,4 +151,23 @@ public interface Transaction extends AutoCloseable, TransactionContext {
 	 */
 	@Override
 	void close();
+
+	enum Lifecycle {
+		/**
+		 * No transaction is currently open or closing.
+		 */
+		NONE,
+		/**
+		 * A transaction is currently open.
+		 */
+		OPEN,
+		/**
+		 * The current transaction is invoking its close callbacks.
+		 */
+		CLOSING,
+		/**
+		 * The current transaction is invoking its outer close callbacks.
+		 */
+		OUTER_CLOSING
+	}
 }

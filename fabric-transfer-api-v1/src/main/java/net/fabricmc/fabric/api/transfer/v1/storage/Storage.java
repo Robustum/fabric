@@ -17,16 +17,13 @@
 package net.fabricmc.fabric.api.transfer.v1.storage;
 
 import java.util.Iterator;
-import java.util.NoSuchElementException;
 
-import org.jetbrains.annotations.ApiStatus;
-import org.jetbrains.annotations.Nullable;
+import com.google.common.collect.Iterators;
 
-import net.fabricmc.fabric.api.transfer.v1.fluid.base.SingleFluidStorage;
 import net.fabricmc.fabric.api.transfer.v1.storage.base.CombinedStorage;
 import net.fabricmc.fabric.api.transfer.v1.storage.base.ExtractionOnlyStorage;
 import net.fabricmc.fabric.api.transfer.v1.storage.base.InsertionOnlyStorage;
-import net.fabricmc.fabric.api.transfer.v1.storage.base.SingleViewIterator;
+import net.fabricmc.fabric.api.transfer.v1.storage.base.SingleVariantStorage;
 import net.fabricmc.fabric.api.transfer.v1.transaction.Transaction;
 import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
 import net.fabricmc.fabric.impl.transfer.TransferApiImpl;
@@ -34,11 +31,14 @@ import net.fabricmc.fabric.impl.transfer.TransferApiImpl;
 /**
  * An object that can store resources.
  *
+ * <p>Most of the documentation that follows is quite technical.
+ * For an easier introduction to the API, see the <a href="https://fabricmc.net/wiki/tutorial:transfer-api">wiki page</a>.
+ *
  * <p><ul>
  *     <li>{@link #supportsInsertion} and {@link #supportsExtraction} can be used to tell if insertion and extraction
  *     functionality are possibly supported by this storage.</li>
  *     <li>{@link #insert} and {@link #extract} can be used to insert or extract resources from this storage.</li>
- *     <li>{@link #iterator} and {@link #exactView} can be used to inspect the contents of this storage.</li>
+ *     <li>{@link #iterator} can be used to inspect the contents of this storage.</li>
  *     <li>{@link #getVersion()} can be used to quickly check if a storage has changed, without having to rescan its contents.</li>
  * </ul>
  *
@@ -46,9 +46,8 @@ import net.fabricmc.fabric.impl.transfer.TransferApiImpl;
  * <ul>
  *     <li>{@link CombinedStorage} can be used to combine multiple instances, for example to combine multiple "slots" in one big storage.</li>
  *     <li>{@link ExtractionOnlyStorage} and {@link InsertionOnlyStorage} can be used when only extraction or insertion is needed.</li>
- *     <li>{@link SingleViewIterator} can be used to wrap a single view for use with {@link #iterator}.</li>
  *     <li>Resource-specific base implementations may also be available.
- *     For example, Fabric API provides {@link SingleFluidStorage} to accelerate implementations of {@code Storage<FluidVariant>}.</li>
+ *     For example, Fabric API provides {@link SingleVariantStorage} to accelerate implementations of transfer variant storages.</li>
  * </ul>
  *
  * <p><b>Important note:</b> Unless otherwise specified, all transfer functions take a non-blank resource
@@ -61,12 +60,8 @@ import net.fabricmc.fabric.impl.transfer.TransferApiImpl;
  *
  * @param <T> The type of the stored resources.
  * @see Transaction
- *
- * <b>Experimental feature</b>, we reserve the right to remove or change it without further notice.
- * The transfer API is a complex addition, and we want to be able to correct possible design mistakes.
  */
-@ApiStatus.Experimental
-public interface Storage<T> {
+public interface Storage<T> extends Iterable<StorageView<T>> {
 	/**
 	 * Return an empty storage.
 	 */
@@ -91,20 +86,9 @@ public interface Storage<T> {
 	 * @param resource The resource to insert. May not be blank.
 	 * @param maxAmount The maximum amount of resource to insert. May not be negative.
 	 * @param transaction The transaction this operation is part of.
-	 * @return A nonnegative integer not greater than maxAmount: the amount that was inserted.
+	 * @return A non-negative integer not greater than maxAmount: the amount that was inserted.
 	 */
 	long insert(T resource, long maxAmount, TransactionContext transaction);
-
-	/**
-	 * Convenient helper to simulate an insertion, i.e. get the result of insert without modifying any state.
-	 * The passed transaction may be null if a new transaction should be opened for the simulation.
-	 * @see #insert
-	 */
-	default long simulateInsert(T resource, long maxAmount, @Nullable TransactionContext transaction) {
-		try (Transaction simulateTransaction = Transaction.openNested(transaction)) {
-			return insert(resource, maxAmount, simulateTransaction);
-		}
-	}
 
 	/**
 	 * Return false if calling {@link #extract} will absolutely always return 0, or true otherwise or in doubt.
@@ -122,32 +106,15 @@ public interface Storage<T> {
 	 * @param resource The resource to extract. May not be blank.
 	 * @param maxAmount The maximum amount of resource to extract. May not be negative.
 	 * @param transaction The transaction this operation is part of.
-	 * @return A nonnegative integer not greater than maxAmount: the amount that was extracted.
+	 * @return A non-negative integer not greater than maxAmount: the amount that was extracted.
 	 */
 	long extract(T resource, long maxAmount, TransactionContext transaction);
 
 	/**
-	 * Convenient helper to simulate an extraction, i.e. get the result of extract without modifying any state.
-	 * The passed transaction may be null if a new transaction should be opened for the simulation.
-	 * @see #extract
-	 */
-	default long simulateExtract(T resource, long maxAmount, @Nullable TransactionContext transaction) {
-		try (Transaction simulateTransaction = Transaction.openNested(transaction)) {
-			return extract(resource, maxAmount, simulateTransaction);
-		}
-	}
-
-	/**
-	 * Iterate through the contents of this storage, for the scope of the passed transaction.
+	 * Iterate through the contents of this storage.
 	 * Every visited {@link StorageView} represents a stored resource and an amount.
 	 * The iterator doesn't guarantee that a single resource only occurs once during an iteration.
-	 *
-	 * <p>The returned iterator and any view it returns are only valid for the scope of to the passed transaction.
-	 * They should not be used once that transaction is closed.
-	 *
-	 * <p>More precisely, as soon as the transaction is closed,
-	 * {@link Iterator#hasNext hasNext()} must return {@code false},
-	 * and any call to {@link Iterator#next next()} must throw a {@link NoSuchElementException}.
+	 * Calling {@linkplain Iterator#remove remove} on the iterator is not allowed.
 	 *
 	 * <p>{@link #insert} and {@link #extract} may be called safely during iteration.
 	 * Extractions should be visible to an open iterator, but insertions are not required to.
@@ -155,41 +122,45 @@ public interface Storage<T> {
 	 * but inventories with a dynamic or very large amount of slots should not do that to ensure timely termination of
 	 * the iteration.
 	 *
-	 * @param transaction The transaction to which the scope of the returned iterator is tied.
-	 * @return An iterator over the contents of this storage.
+	 * <p>If a modification is made to the storage during iteration, the iterator might become invalid at the end of the outermost transaction.
+	 * In particular, if multiple storage views are extracted from, the entire iteration should be wrapped in a transaction.
+	 *
+	 * @return An iterator over the contents of this storage. Calling remove on the iterator is not allowed.
 	 */
-	Iterator<StorageView<T>> iterator(TransactionContext transaction);
+	@Override
+	Iterator<StorageView<T>> iterator();
 
 	/**
-	 * Iterate through the contents of this storage, for the scope of the passed transaction.
-	 * This function follows the semantics of {@link #iterator}, but returns an {@code Iterable} for use in {@code for} loops.
+	 * Same as {@link #iterator()}, but the iterator is guaranteed to skip over empty views,
+	 * i.e. views that {@linkplain StorageView#isResourceBlank() contain blank resources} or have a zero {@linkplain StorageView#getAmount() amount}.
 	 *
-	 * @param transaction The transaction to which the scope of the returned iterator is tied.
-	 * @return An iterable over the contents of this storage.
-	 * @see #iterator
+	 * <p>This can provide a large performance benefit over {@link #iterator()} if the caller is only interested in non-empty views,
+	 * for example because it is trying to extract resources from the storage.
+	 *
+	 * <p>This function should only be overridden if the storage is able to provide an optimized iterator over non-empty views,
+	 * for example because it is keeping an index of non-empty views.
+	 * Otherwise, the default implementation simply calls {@link #iterator()} and filters out empty views.
+	 *
+	 * <p>When implementing this function, note that the guarantees of {@link #iterator()} still apply.
+	 * In particular, {@link #insert} and {@link #extract} may be called safely during iteration.
+	 *
+	 * @return An iterator over the non-empty views of this storage. Calling remove on the iterator is not allowed.
 	 */
-	default Iterable<StorageView<T>> iterable(TransactionContext transaction) {
-		return () -> iterator(transaction);
+	default Iterator<StorageView<T>> nonEmptyIterator() {
+		return Iterators.filter(iterator(), view -> view.getAmount() > 0 && !view.isResourceBlank());
 	}
 
 	/**
-	 * Return a view over this storage, for a specific resource, or {@code null} if none is quickly available.
+	 * Convenient helper to get an {@link Iterable} over the {@linkplain #nonEmptyIterator() non-empty views} of this storage, for use in for-each loops.
 	 *
-	 * <p>This function should only return a non-null view if this storage can provide it quickly,
-	 * for example with a hashmap lookup.
-	 * If returning the requested view would require iteration through a potentially large number of views,
-	 * {@code null} should be returned instead.
-	 *
-	 * <p>The returned view is tied to the passed transaction,
-	 * and may never be used once the passed transaction has been closed.
-	 *
-	 * @param transaction The transaction to which the scope of the returned storage view is tied.
-	 * @param resource The resource for which a storage view is requested. May be blank, for example to estimate capacity.
-	 * @return A view over this storage for the passed resource, or {@code null} if none is quickly available.
+	 * <p><pre>{@code
+	 * for (StorageView<T> view : storage.nonEmptyViews()) {
+	 *     // Do something with the view
+	 * }
+	 * }</pre>
 	 */
-	@Nullable
-	default StorageView<T> exactView(TransactionContext transaction, T resource) {
-		return null;
+	default Iterable<StorageView<T>> nonEmptyViews() {
+		return this::nonEmptyIterator;
 	}
 
 	/**

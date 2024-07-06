@@ -17,13 +17,15 @@
 package net.fabricmc.fabric.api.transfer.v1.storage;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Predicate;
 
-import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.inventory.Inventory;
 import net.minecraft.screen.ScreenHandler;
+import net.minecraft.util.crash.CrashException;
+import net.minecraft.util.crash.CrashReport;
 import net.minecraft.util.math.MathHelper;
 
 import net.fabricmc.fabric.api.transfer.v1.storage.base.ResourceAmount;
@@ -36,12 +38,11 @@ import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
  *
  * <p>Note that the functions that take a predicate iterate over the entire inventory in the worst case.
  * If the resource is known, there will generally be a more performance efficient way.
- *
- * <p><b>Experimental feature</b>, we reserve the right to remove or change it without further notice.
- * The transfer API is a complex addition, and we want to be able to correct possible design mistakes.
  */
-@ApiStatus.Experimental
 public final class StorageUtil {
+	private StorageUtil() {
+	}
+
 	/**
 	 * Move resources between two storages, matching the passed filter, and return the amount that was successfully transferred.
 	 *
@@ -78,22 +79,18 @@ public final class StorageUtil {
 	 * @throws IllegalStateException If no transaction is passed and a transaction is already active on the current thread.
 	 */
 	public static <T> long move(@Nullable Storage<T> from, @Nullable Storage<T> to, Predicate<T> filter, long maxAmount, @Nullable TransactionContext transaction) {
+		Objects.requireNonNull(filter, "Filter may not be null");
 		if (from == null || to == null) return 0;
 
 		long totalMoved = 0;
 
 		try (Transaction iterationTransaction = Transaction.openNested(transaction)) {
-			for (StorageView<T> view : from.iterable(iterationTransaction)) {
-				if (view.isResourceBlank()) continue;
+			for (StorageView<T> view : from.nonEmptyViews()) {
 				T resource = view.getResource();
 				if (!filter.test(resource)) continue;
-				long maxExtracted;
 
 				// check how much can be extracted
-				try (Transaction extractionTestTransaction = iterationTransaction.openNested()) {
-					maxExtracted = view.extract(resource, maxAmount - totalMoved, extractionTestTransaction);
-					extractionTestTransaction.abort();
-				}
+				long maxExtracted = simulateExtract(view, resource, maxAmount - totalMoved, iterationTransaction);
 
 				try (Transaction transferTransaction = iterationTransaction.openNested()) {
 					// check how much can be inserted
@@ -114,9 +111,99 @@ public final class StorageUtil {
 			}
 
 			iterationTransaction.commit();
+		} catch (Exception e) {
+			CrashReport report = CrashReport.create(e, "Moving resources between storages");
+			report.addElement("Move details")
+					.add("Input storage", from::toString)
+					.add("Output storage", to::toString)
+					.add("Filter", filter::toString)
+					.add("Max amount", maxAmount)
+					.add("Transaction", transaction);
+			throw new CrashException(report);
 		}
 
 		return totalMoved;
+	}
+
+	/**
+	 * Convenient helper to simulate an insertion, i.e. get the result of insert without modifying any state.
+	 * The passed transaction may be null if a new transaction should be opened for the simulation.
+	 * @see Storage#insert
+	 */
+	public static <T> long simulateInsert(Storage<T> storage, T resource, long maxAmount, @Nullable TransactionContext transaction) {
+		try (Transaction simulateTransaction = Transaction.openNested(transaction)) {
+			return storage.insert(resource, maxAmount, simulateTransaction);
+		}
+	}
+
+	/**
+	 * Convenient helper to simulate an extraction, i.e. get the result of extract without modifying any state.
+	 * The passed transaction may be null if a new transaction should be opened for the simulation.
+	 * @see Storage#insert
+	 */
+	public static <T> long simulateExtract(Storage<T> storage, T resource, long maxAmount, @Nullable TransactionContext transaction) {
+		try (Transaction simulateTransaction = Transaction.openNested(transaction)) {
+			return storage.extract(resource, maxAmount, simulateTransaction);
+		}
+	}
+
+	/**
+	 * Convenient helper to simulate an extraction, i.e. get the result of extract without modifying any state.
+	 * The passed transaction may be null if a new transaction should be opened for the simulation.
+	 * @see Storage#insert
+	 */
+	public static <T> long simulateExtract(StorageView<T> storageView, T resource, long maxAmount, @Nullable TransactionContext transaction) {
+		try (Transaction simulateTransaction = Transaction.openNested(transaction)) {
+			return storageView.extract(resource, maxAmount, simulateTransaction);
+		}
+	}
+
+	/**
+	 * Convenient helper to simulate an extraction, i.e. get the result of extract without modifying any state.
+	 * The passed transaction may be null if a new transaction should be opened for the simulation.
+	 * @see Storage#insert
+	 * @apiNote This function handles the method overload conflict for objects that implement both {@link Storage} and {@link StorageView}.
+	 */
+	// Object & is used to have a different erasure than the other overloads.
+	public static <T, S extends Object & Storage<T> & StorageView<T>> long simulateExtract(S storage, T resource, long maxAmount, @Nullable TransactionContext transaction) {
+		try (Transaction simulateTransaction = Transaction.openNested(transaction)) {
+			return storage.extract(resource, maxAmount, simulateTransaction);
+		}
+	}
+
+	/**
+	 * Try to extract any resource from a storage, up to a maximum amount.
+	 *
+	 * <p>This function will only ever pull from one storage view of the storage, even if multiple storage views contain the same resource.
+	 *
+	 * @param storage The storage, may be null.
+	 * @param maxAmount The maximum to extract.
+	 * @param transaction The transaction this operation is part of.
+	 * @return A non-blank resource and the strictly positive amount of it that was extracted from the storage,
+	 * or {@code null} if none could be found.
+	 */
+	@Nullable
+	public static <T> ResourceAmount<T> extractAny(@Nullable Storage<T> storage, long maxAmount, TransactionContext transaction) {
+		StoragePreconditions.notNegative(maxAmount);
+
+		if (storage == null) return null;
+
+		try {
+			for (StorageView<T> view : storage.nonEmptyViews()) {
+				T resource = view.getResource();
+				long amount = view.extract(resource, maxAmount, transaction);
+				if (amount > 0) return new ResourceAmount<>(resource, amount);
+			}
+		} catch (Exception e) {
+			CrashReport report = CrashReport.create(e, "Extracting resources from storage");
+			report.addElement("Extraction details")
+					.add("Storage", storage::toString)
+					.add("Max amount", maxAmount)
+					.add("Transaction", transaction);
+			throw new CrashException(report);
+		}
+
+		return null;
 	}
 
 	/**
@@ -126,34 +213,75 @@ public final class StorageUtil {
 	 * @return How much was inserted.
 	 * @see Storage#insert
 	 */
-	public static <T> long insertStacking(List<SingleSlotStorage<T>> slots, T resource, long maxAmount, TransactionContext transaction) {
+	public static <T> long insertStacking(List<? extends SingleSlotStorage<T>> slots, T resource, long maxAmount, TransactionContext transaction) {
 		StoragePreconditions.notNegative(maxAmount);
 		long amount = 0;
 
-		for (SingleSlotStorage<T> slot : slots) {
-			if (!slot.isResourceBlank()) {
+		try {
+			for (SingleSlotStorage<T> slot : slots) {
+				if (!slot.isResourceBlank()) {
+					amount += slot.insert(resource, maxAmount - amount, transaction);
+					if (amount == maxAmount) return amount;
+				}
+			}
+
+			for (SingleSlotStorage<T> slot : slots) {
 				amount += slot.insert(resource, maxAmount - amount, transaction);
 				if (amount == maxAmount) return amount;
 			}
-		}
-
-		for (SingleSlotStorage<T> slot : slots) {
-			amount += slot.insert(resource, maxAmount - amount, transaction);
-			if (amount == maxAmount) return amount;
+		} catch (Exception e) {
+			CrashReport report = CrashReport.create(e, "Inserting resources into slots");
+			report.addElement("Slotted insertion details")
+					.add("Slots", () -> Objects.toString(slots, null))
+					.add("Resource", () -> Objects.toString(resource, null))
+					.add("Max amount", maxAmount)
+					.add("Transaction", transaction);
+			throw new CrashException(report);
 		}
 
 		return amount;
 	}
 
 	/**
+	 * Insert resources in a storage, attempting to stack them with existing resources first if possible.
+	 *
+	 * @param storage The storage, may be null.
+	 * @param resource The resource to insert. May not be blank.
+	 * @param maxAmount The maximum amount of resource to insert. May not be negative.
+	 * @param transaction The transaction this operation is part of.
+	 * @return A nonnegative integer not greater than maxAmount: the amount that was inserted.
+	 */
+	public static <T> long tryInsertStacking(@Nullable Storage<T> storage, T resource, long maxAmount, TransactionContext transaction) {
+		StoragePreconditions.notNegative(maxAmount);
+
+		try {
+			if (storage instanceof SlottedStorage<T> slottedStorage) {
+				return insertStacking(slottedStorage.getSlots(), resource, maxAmount, transaction);
+			} else if (storage != null) {
+				return storage.insert(resource, maxAmount, transaction);
+			} else {
+				return 0;
+			}
+		} catch (Exception e) {
+			CrashReport report = CrashReport.create(e, "Inserting resources into a storage");
+			report.addElement("Insertion details")
+					.add("Storage", () -> Objects.toString(storage, null))
+					.add("Resource", () -> Objects.toString(resource, null))
+					.add("Max amount", maxAmount)
+					.add("Transaction", transaction);
+			throw new CrashException(report);
+		}
+	}
+
+	/**
 	 * Attempt to find a resource stored in the passed storage.
 	 *
-	 * @see #findStoredResource(Storage, Predicate, TransactionContext)
+	 * @see #findStoredResource(Storage, Predicate)
 	 * @return A non-blank resource stored in the storage, or {@code null} if none could be found.
 	 */
 	@Nullable
-	public static <T> T findStoredResource(@Nullable Storage<T> storage, @Nullable TransactionContext transaction) {
-		return findStoredResource(storage, r -> true, transaction);
+	public static <T> T findStoredResource(@Nullable Storage<T> storage) {
+		return findStoredResource(storage, r -> true);
 	}
 
 	/**
@@ -161,27 +289,16 @@ public final class StorageUtil {
 	 *
 	 * @param storage The storage to inspect, may be null.
 	 * @param filter The filter. Only a resource for which this filter returns {@code true} will be returned.
-	 * @param transaction The current transaction, or {@code null} if a transaction should be opened for this query.
 	 * @param <T> The type of the stored resources.
 	 * @return A non-blank resource stored in the storage that matches the filter, or {@code null} if none could be found.
 	 */
 	@Nullable
-	public static <T> T findStoredResource(@Nullable Storage<T> storage, Predicate<T> filter, @Nullable TransactionContext transaction) {
+	public static <T> T findStoredResource(@Nullable Storage<T> storage, Predicate<T> filter) {
+		Objects.requireNonNull(filter, "Filter may not be null");
 		if (storage == null) return null;
 
-		if (transaction == null) {
-			try (Transaction outer = Transaction.openOuter()) {
-				return findStoredResourceInner(storage, filter, outer);
-			}
-		} else {
-			return findStoredResourceInner(storage, filter, transaction);
-		}
-	}
-
-	@Nullable
-	private static <T> T findStoredResourceInner(Storage<T> storage, Predicate<T> filter, TransactionContext transaction) {
-		for (StorageView<T> view : storage.iterable(transaction)) {
-			if (!view.isResourceBlank() && filter.test(view.getResource())) {
+		for (StorageView<T> view : storage.nonEmptyViews()) {
+			if (filter.test(view.getResource())) {
 				return view.getResource();
 			}
 		}
@@ -211,14 +328,15 @@ public final class StorageUtil {
 	 */
 	@Nullable
 	public static <T> T findExtractableResource(@Nullable Storage<T> storage, Predicate<T> filter, @Nullable TransactionContext transaction) {
+		Objects.requireNonNull(filter, "Filter may not be null");
 		if (storage == null) return null;
 
 		try (Transaction nested = Transaction.openNested(transaction)) {
-			for (StorageView<T> view : storage.iterable(nested)) {
+			for (StorageView<T> view : storage.nonEmptyViews()) {
 				// Extract below could change the resource, so we have to query it before extracting.
 				T resource = view.getResource();
 
-				if (!view.isResourceBlank() && filter.test(resource) && view.extract(resource, Long.MAX_VALUE, nested) > 0) {
+				if (filter.test(resource) && view.extract(resource, Long.MAX_VALUE, nested) > 0) {
 					// Will abort the extraction.
 					return resource;
 				}
@@ -255,7 +373,7 @@ public final class StorageUtil {
 		T extractableResource = findExtractableResource(storage, filter, transaction);
 
 		if (extractableResource != null) {
-			long extractableAmount = storage.simulateExtract(extractableResource, Long.MAX_VALUE, transaction);
+			long extractableAmount = simulateExtract(storage, extractableResource, Long.MAX_VALUE, transaction);
 
 			if (extractableAmount > 0) {
 				return new ResourceAmount<>(extractableResource, extractableAmount);
@@ -269,28 +387,17 @@ public final class StorageUtil {
 	 * Compute the comparator output for a storage, similar to {@link ScreenHandler#calculateComparatorOutput(Inventory)}.
 	 *
 	 * @param storage The storage for which the comparator level should be computed.
-	 * @param transaction The current transaction, or {@code null} if a transaction should be opened for this computation.
 	 * @param <T> The type of the stored resources.
 	 * @return An integer between 0 and 15 (inclusive): the comparator output for the passed storage.
 	 */
-	public static <T> int calculateComparatorOutput(@Nullable Storage<T> storage, @Nullable TransactionContext transaction) {
+	public static <T> int calculateComparatorOutput(@Nullable Storage<T> storage) {
 		if (storage == null) return 0;
 
-		if (transaction == null) {
-			try (Transaction outer = Transaction.openOuter()) {
-				return calculateComparatorOutputInner(storage, outer);
-			}
-		} else {
-			return calculateComparatorOutputInner(storage, transaction);
-		}
-	}
-
-	private static <T> int calculateComparatorOutputInner(Storage<T> storage, TransactionContext transaction) {
 		double fillPercentage = 0;
 		int viewCount = 0;
 		boolean hasNonEmptyView = false;
 
-		for (StorageView<T> view : storage.iterable(transaction)) {
+		for (StorageView<T> view : storage) {
 			viewCount++;
 
 			if (view.getAmount() > 0) {

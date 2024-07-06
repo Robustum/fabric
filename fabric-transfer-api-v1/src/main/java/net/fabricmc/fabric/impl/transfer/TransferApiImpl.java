@@ -16,15 +16,20 @@
 
 package net.fabricmc.fabric.impl.transfer;
 
+import java.util.AbstractList;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import net.fabricmc.fabric.api.transfer.v1.storage.SlottedStorage;
 import net.fabricmc.fabric.api.transfer.v1.storage.Storage;
 import net.fabricmc.fabric.api.transfer.v1.storage.StorageView;
+import net.fabricmc.fabric.api.transfer.v1.storage.base.SingleSlotStorage;
 import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
 
 public class TransferApiImpl {
@@ -53,7 +58,7 @@ public class TransferApiImpl {
 		}
 
 		@Override
-		public Iterator<StorageView> iterator(TransactionContext transaction) {
+		public Iterator<StorageView> iterator() {
 			return Collections.emptyIterator();
 		}
 
@@ -61,5 +66,45 @@ public class TransferApiImpl {
 		public long getVersion() {
 			return 0;
 		}
+
+		@Override
+		public String toString() {
+			return "EmptyStorage";
+		}
 	};
+
+	public static <T> Iterator<T> singletonIterator(T it) {
+		return new Iterator<T>() {
+			boolean hasNext = true;
+
+			@Override
+			public boolean hasNext() {
+				return hasNext;
+			}
+
+			@Override
+			public T next() {
+				if (!hasNext) {
+					throw new NoSuchElementException();
+				}
+
+				hasNext = false;
+				return it;
+			}
+		};
+	}
+
+	public static <T> List<SingleSlotStorage<T>> makeListView(SlottedStorage<T> storage) {
+		return new AbstractList<>() {
+			@Override
+			public SingleSlotStorage<T> get(int index) {
+				return storage.getSlot(index);
+			}
+
+			@Override
+			public int size() {
+				return storage.getSlotCount();
+			}
+		};
+	}
 }

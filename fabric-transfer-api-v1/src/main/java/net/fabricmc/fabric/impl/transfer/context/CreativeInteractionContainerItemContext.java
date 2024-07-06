@@ -16,50 +16,50 @@
 
 package net.fabricmc.fabric.impl.transfer.context;
 
-import java.util.List;
-
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.Hand;
 
-import net.fabricmc.fabric.api.transfer.v1.context.ContainerItemContext;
 import net.fabricmc.fabric.api.transfer.v1.item.ItemVariant;
 import net.fabricmc.fabric.api.transfer.v1.item.PlayerInventoryStorage;
+import net.fabricmc.fabric.api.transfer.v1.storage.StoragePreconditions;
 import net.fabricmc.fabric.api.transfer.v1.storage.base.SingleSlotStorage;
 import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
 
-public class PlayerContainerItemContext implements ContainerItemContext {
-	private final PlayerInventoryStorage playerWrapper;
-	private final SingleSlotStorage<ItemVariant> slot;
+public class CreativeInteractionContainerItemContext extends ConstantContainerItemContext {
+	private final PlayerInventoryStorage playerInventory;
 
-	public PlayerContainerItemContext(PlayerEntity player, Hand hand) {
-		this.playerWrapper = PlayerInventoryStorage.of(player);
-		this.slot = playerWrapper.getHandSlot(hand);
-	}
+	public CreativeInteractionContainerItemContext(ItemVariant initialVariant, long initialAmount, PlayerEntity player) {
+		super(initialVariant, initialAmount);
 
-	public PlayerContainerItemContext(PlayerEntity player, SingleSlotStorage<ItemVariant> slot) {
-		this.playerWrapper = PlayerInventoryStorage.of(player);
-		this.slot = slot;
-	}
-
-	@Override
-	public SingleSlotStorage<ItemVariant> getMainSlot() {
-		return slot;
+		this.playerInventory = PlayerInventoryStorage.of(player);
 	}
 
 	@Override
 	public long insertOverflow(ItemVariant itemVariant, long maxAmount, TransactionContext transactionContext) {
-		playerWrapper.offerOrDrop(itemVariant, maxAmount, transactionContext);
+		StoragePreconditions.notBlankNotNegative(itemVariant, maxAmount);
+
+		if (maxAmount > 0) {
+			// Only add the item to the player inventory if it's not already in the inventory.
+			boolean hasItem = false;
+
+			for (SingleSlotStorage<ItemVariant> slot : playerInventory.getSlots()) {
+				if (slot.getResource().equals(itemVariant) && slot.getAmount() > 0) {
+					hasItem = true;
+					break;
+				}
+			}
+
+			if (!hasItem) {
+				playerInventory.offer(itemVariant, 1, transactionContext);
+			}
+		}
+
+		// Insertion always succeeds from the POV of the context user.
 		return maxAmount;
 	}
 
 	@Override
-	public List<SingleSlotStorage<ItemVariant>> getAdditionalSlots() {
-		return playerWrapper.getSlots();
-	}
-
-	@Override
 	public String toString() {
-		return "PlayerContainerItemContext[%d %s %s/%s]"
-				.formatted(slot.getAmount(), slot.getResource(), playerWrapper, slot);
+		return "CreativeInteractionContainerItemContext[%d %s]"
+				.formatted(getMainSlot().getAmount(), getMainSlot().getResource());
 	}
 }

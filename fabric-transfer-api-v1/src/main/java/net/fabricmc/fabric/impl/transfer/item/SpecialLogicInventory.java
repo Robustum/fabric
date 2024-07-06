@@ -14,22 +14,26 @@
  * limitations under the License.
  */
 
-package net.fabricmc.fabric.api.transfer.v1.storage.base;
+package net.fabricmc.fabric.impl.transfer.item;
 
-import net.fabricmc.fabric.api.transfer.v1.storage.Storage;
+import net.minecraft.item.ItemStack;
+
 import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
 
 /**
- * A {@link Storage} that supports extraction, and not insertion.
+ * Internal class that allows inventory instances to defer special logic until {@link InventorySlotWrapper#onFinalCommit()} is called.
  */
-public interface ExtractionOnlyStorage<T> extends Storage<T> {
-	@Override
-	default boolean supportsInsertion() {
-		return false;
-	}
+public interface SpecialLogicInventory {
+	/**
+	 * Decide whether special logic should now be suppressed. If true, must remain suppressed until the next call.
+	 */
+	void fabric_setSuppress(boolean suppress);
 
-	@Override
-	default long insert(T resource, long maxAmount, TransactionContext transaction) {
-		return 0;
+	void fabric_onFinalCommit(int slot, ItemStack oldStack, ItemStack newStack);
+
+	/**
+	 * Called after a slot has been modified (i.e. insert or extract with result > 0).
+	 */
+	default void fabric_onTransfer(int slot, TransactionContext transaction) {
 	}
 }

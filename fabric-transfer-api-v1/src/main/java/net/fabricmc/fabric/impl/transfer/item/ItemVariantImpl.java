@@ -18,6 +18,8 @@ package net.fabricmc.fabric.impl.transfer.item;
 
 import java.util.Objects;
 
+import net.minecraft.item.ItemStack;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
@@ -48,6 +50,10 @@ public class ItemVariantImpl implements ItemVariant {
 	private final Item item;
 	private final @Nullable CompoundTag nbt;
 	private final int hashCode;
+	/**
+	 * Lazily computed, equivalent to calling toStack(1). <b>MAKE SURE IT IS NEVER MODIFIED!</b>
+	 */
+	private volatile @Nullable ItemStack cachedStack = null;
 
 	public ItemVariantImpl(Item item, CompoundTag nbt) {
 		this.item = item;
@@ -134,5 +140,16 @@ public class ItemVariantImpl implements ItemVariant {
 	@Override
 	public int hashCode() {
 		return hashCode;
+	}
+
+	public ItemStack getCachedStack() {
+		ItemStack ret = cachedStack;
+
+		if (ret == null) {
+			// multiple stacks could be created at the same time by different threads, but that is not an issue
+			cachedStack = ret = toStack();
+		}
+
+		return ret;
 	}
 }

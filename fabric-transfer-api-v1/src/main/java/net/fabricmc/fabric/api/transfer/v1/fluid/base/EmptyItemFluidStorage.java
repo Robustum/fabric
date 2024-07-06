@@ -17,9 +17,8 @@
 package net.fabricmc.fabric.api.transfer.v1.fluid.base;
 
 import java.util.Iterator;
+import java.util.List;
 import java.util.function.Function;
-
-import org.jetbrains.annotations.ApiStatus;
 
 import net.minecraft.fluid.Fluid;
 import net.minecraft.item.Item;
@@ -31,13 +30,12 @@ import net.fabricmc.fabric.api.transfer.v1.storage.StoragePreconditions;
 import net.fabricmc.fabric.api.transfer.v1.storage.StorageView;
 import net.fabricmc.fabric.api.transfer.v1.storage.base.BlankVariantView;
 import net.fabricmc.fabric.api.transfer.v1.storage.base.InsertionOnlyStorage;
-import net.fabricmc.fabric.api.transfer.v1.storage.base.SingleViewIterator;
 import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
 
 /**
  * Base implementation of a fluid storage for an empty item.
  * The empty item can be filled with an exact amount of some fluid to yield a full item instead.
- * The default behavior is to copy the NBT from the empty item to the full item,
+ * The default behavior is to copy the components from the empty item to the full item,
  * however there is a second constructor that allows customizing the mapping.
  *
  * <p>For example, an empty bucket could be registered to accept exactly 81000 droplets of water and turn into a water bucket, like that:
@@ -55,24 +53,21 @@ import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
  * (This is just for illustration purposes! In practice, Fabric API already registers storages for most buckets,
  * and it is inefficient to have one storage registered per fluid
  * so Fabric API has a storage that accepts any fluid with a corresponding full bucket).
- *
- * <p><b>Experimental feature</b>, we reserve the right to remove or change it without further notice.
- * The transfer API is a complex addition, and we want to be able to correct possible design mistakes.
  */
-@ApiStatus.Experimental
 public final class EmptyItemFluidStorage implements InsertionOnlyStorage<FluidVariant> {
 	private final ContainerItemContext context;
 	private final Item emptyItem;
 	private final Function<ItemVariant, ItemVariant> emptyToFullMapping;
 	private final Fluid insertableFluid;
 	private final long insertableAmount;
+	private final List<StorageView<FluidVariant>> blankView;
 
 	/**
 	 * Create a new instance.
 	 *
 	 * @param context The current context.
 	 * @param fullItem The new item after a successful fill operation.
-	 * @param insertableFluid The fluid that can be inserted. Fluid variant NBT is ignored.
+	 * @param insertableFluid The fluid that can be inserted. Fluid variant components are ignored.
 	 * @param insertableAmount The amount of fluid that can be inserted.
 	 */
 	public EmptyItemFluidStorage(ContainerItemContext context, Item fullItem, Fluid insertableFluid, long insertableAmount) {
@@ -81,12 +76,12 @@ public final class EmptyItemFluidStorage implements InsertionOnlyStorage<FluidVa
 
 	/**
 	 * Create a new instance, with a custom mapping function.
-	 * The mapping function allows customizing how the NBT of the full item depends on the NBT of the empty item.
-	 * The default behavior with the other constructor is to just copy the full NBT.
+	 * The mapping function allows customizing how the components of the full item depends on the components of the empty item.
+	 * The default behavior with the other constructor is to just copy the full components.
 	 *
 	 * @param context The current context.
 	 * @param emptyToFullMapping A function mapping the empty item variant, to the variant that should be used for the full item.
-	 * @param insertableFluid The fluid that can be inserted. Fluid variant NBT is ignored on insertion.
+	 * @param insertableFluid The fluid that can be inserted. Fluid variant components are ignored on insertion.
 	 * @param insertableAmount The amount of fluid that can be inserted.
 	 * @see #EmptyItemFluidStorage(ContainerItemContext, Item, Fluid, long)
 	 */
@@ -98,6 +93,7 @@ public final class EmptyItemFluidStorage implements InsertionOnlyStorage<FluidVa
 		this.emptyToFullMapping = emptyToFullMapping;
 		this.insertableFluid = insertableFluid;
 		this.insertableAmount = insertableAmount;
+		this.blankView = List.of(new BlankVariantView<>(FluidVariant.blank(), insertableAmount));
 	}
 
 	@Override
@@ -122,7 +118,13 @@ public final class EmptyItemFluidStorage implements InsertionOnlyStorage<FluidVa
 	}
 
 	@Override
-	public Iterator<StorageView<FluidVariant>> iterator(TransactionContext transaction) {
-		return SingleViewIterator.create(new BlankVariantView<>(FluidVariant.blank(), insertableAmount), transaction);
+	public Iterator<StorageView<FluidVariant>> iterator() {
+		return blankView.iterator();
+	}
+
+	@Override
+	public String toString() {
+		return "EmptyItemFluidStorage[context=%s, insertableFluid=%s, insertableAmount=%d]"
+				.formatted(context, insertableFluid, insertableAmount);
 	}
 }

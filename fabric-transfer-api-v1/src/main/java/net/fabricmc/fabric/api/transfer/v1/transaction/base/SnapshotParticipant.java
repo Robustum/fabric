@@ -20,14 +20,25 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-import org.jetbrains.annotations.ApiStatus;
-
 import net.fabricmc.fabric.api.transfer.v1.transaction.Transaction;
 import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
 
 /**
  * A base participant implementation that modifies itself during transactions,
  * saving snapshots of its state in objects of type {@code T} in case it needs to revert to a previous state.
+ *
+ * <h3>How to use from subclasses</h3>
+ * <ul>
+ *     <li>Call {@link #updateSnapshots} right before the state of your subclass is modified in a transaction.</li>
+ *     <li>Override {@link #createSnapshot}: it is called when necessary to create an object representing the state of your subclass.</li>
+ *     <li>Override {@link #readSnapshot}: it is called when necessary to revert to a previous state of your subclass.</li>
+ *     <li>You may optionally override {@link #onFinalCommit}: it is called at the of a transaction that modified the state.
+ *     For example, it could contain a call to {@code markDirty()}.</li>
+ *     <li>(Advanced!) You may optionally override {@link #releaseSnapshot}: it is called once a snapshot object will not be used,
+ *     for example you may wish to pool expensive state objects.</li>
+ * </ul>
+ *
+ * <h3>More technical explanation</h3>
  *
  * <p>{@link #updateSnapshots} should be called before any modification.
  * This will save the state of this participant using {@link #createSnapshot} if no state was already saved for that transaction.
@@ -40,11 +51,7 @@ import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
  * and {@link #onFinalCommit} will be called after the transaction is closed.
  *
  * @param <T> The objects that this participant uses to save its state snapshots.
- *
- * <b>Experimental feature</b>, we reserve the right to remove or change it without further notice.
- * The transfer API is a complex addition, and we want to be able to correct possible design mistakes.
  */
-@ApiStatus.Experimental
 public abstract class SnapshotParticipant<T> implements Transaction.CloseCallback, Transaction.OuterCloseCallback {
 	private final List<T> snapshots = new ArrayList<>();
 
