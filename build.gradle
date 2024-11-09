@@ -11,7 +11,7 @@ plugins {
 	id "maven-publish"
 	id "fabric-loom" version "1.7.1" apply false
 	id "org.cadixdev.licenser" version "0.6.1"
-	id "org.ajoberstar.grgit" version "3.1.1"
+	id "org.ajoberstar.grgit" version "5.3.0"
 	id "com.matthewprenger.cursegradle" version "1.4.0"
 	id "com.modrinth.minotaur" version "1.1.0"
 }
