@@ -4,6 +4,7 @@
   "compatibilityLevel": "JAVA_16",
   "mixins": [
     "CommandManagerMixin",
+    "GameTestMixin",
     "MinecraftServerMixin",
     "StructureTestUtilMixin",
     "TestFunctionsMixin",
